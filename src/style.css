@@ -464,3 +464,15 @@ body.touch .hud:not(.manager) .feed { top: auto; right: auto; left: 50%; transfo
   body.touch .hud:not(.manager) .me { top: max(6px, env(safe-area-inset-top)); }
   body.touch .hud:not(.manager) .boons { top: 50px; }
 }
+
+/* ---------------------------------------------------------------- hero emblems (game-icons.net) */
+
+.hicon { width: 68%; height: 68%; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); pointer-events: none; }
+.hicon.inline { width: 1.25em; height: 1.25em; vertical-align: -0.28em; }
+.portrait .hicon { width: 62%; height: 62%; }
+.face, .pface, .portrait, .ricon { display: grid; place-items: center; }
+.face, .pface { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--hc) 60%, #333), color-mix(in srgb, var(--hc) 45%, black)) !important; }
+.portrait { background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--hc) 65%, #444), color-mix(in srgb, var(--hc) 40%, black) 70%) !important; }
+.ricon { width: 24px; height: 24px; border-radius: 50%; background: #2a3442; }
+.ricon .hicon { width: 80%; height: 80%; }
+.credits { color: var(--muted); font-size: 12px; margin: 18px 0 8px; } .credits a { color: var(--muted); }

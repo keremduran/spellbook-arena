@@ -60,4 +60,4 @@ This project uses no Riot Games names, champions, art or abilities. Riot's fan c
 
 ## License
 
-MIT. Uses [Phaser](https://phaser.io) (MIT). The art is emoji and shapes, so there are no third-party assets.
+Code: MIT. Uses [Phaser](https://phaser.io) (MIT). Hero icons are by Lorc and Delapouite from [game-icons.net](https://game-icons.net), licensed [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/); see `src/assets/heroes/CREDITS.md`. Everything else (map, effects, minions, sounds) is generated in code.

@@ -2,6 +2,7 @@ import type { Draft, DraftOption, Picks } from '../sim/draft';
 import type { HeroDef } from '../sim/heroes';
 import type { Rng } from '../sim/rng';
 import { RARITIES, SLOTS, type Slot } from '../sim/types';
+import { heroImg } from '../game/heroIcons';
 import { el } from './dom';
 
 export const SLOT_LABEL: Record<Slot, string> = { P: 'Passive', Q: 'Ability', W: 'Ability', E: 'Ability', R: 'Ultimate' };
@@ -61,7 +62,7 @@ export function showDraft(root: HTMLElement, hero: HeroDef, draft: Draft, rng: R
       el('div.draft-head', {}, [el('h1.title', { text: 'Draft your spellbook' }), timer]),
       el('div.draft-body', {}, [
         el('div.hero-card.panel', {}, [
-          el('div.portrait', { style: `--hc:${hero.color}`, text: hero.icon }),
+          el('div.portrait', { style: `--hc:${hero.color}` }, [heroImg(hero)]),
           el('h2', { text: hero.name }),
           el('div.role', { text: `${hero.role} · ${hero.range > 200 ? 'Ranged' : 'Melee'}` }),
           el('div.statgrid', {}, [

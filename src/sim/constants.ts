@@ -1,6 +1,6 @@
 import type { Team } from './types';
 
-export const MAP_W = 3400;
+export const MAP_W = 3800;
 export const MAP_H = 1100;
 export const LANE_Y = 550;
 /** Walkable vertical band; outside it are the lane walls. */
@@ -17,7 +17,11 @@ export const FOUNTAIN: Record<Team, { x: number; y: number }> = {
 export const FOUNTAIN_RADIUS = 300;
 
 /** x positions of the blue side; red mirrors them. */
-export const STRUCTURE_X = { nexus: 380, inner: 760, outer: 1200 };
+/**
+ * Outer and inner towers are 720 apart: more than a tower's 560 range plus unit sizes,
+ * so heroes hitting the outer tower are out of the inner tower's reach.
+ */
+export const STRUCTURE_X = { nexus: 380, inner: 700, outer: 1420 };
 export const mirrorX = (team: Team, x: number) => (team === 'blue' ? x : MAP_W - x);
 export const laneDir = (team: Team) => (team === 'blue' ? 1 : -1);
 

@@ -78,9 +78,9 @@ export class World {
 
   private buildBase(team: Team) {
     const tower = (hp: number): Stats => ({ ...emptyStats(), maxHp: hp, ad: 130, attackRange: 560, attackSpeed: 0.85 });
-    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(3400));
+    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(4300));
     outer.structure = { consecutive: 0 };
-    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(3900));
+    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(4700));
     inner.structure = { consecutive: 0, protectedBy: outer.id };
     const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 5200 });
     nexus.structure = { consecutive: 0, protectedBy: inner.id };

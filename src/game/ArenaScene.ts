@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { FOUNTAIN, LANE_Y, MAP_H, MAP_W, STEP } from '../sim/constants';
 import type { GameEvent, Slot, Unit, Vec } from '../sim/types';
 import type { World } from '../sim/world';
+import { heroIconBase64 } from './heroIcons';
 import { hex, TEAM_COLOR, Visuals } from './visuals';
 const KEY_SLOTS: Record<string, Slot> = { q: 'Q', w: 'W', e: 'E', r: 'R' };
 
@@ -50,6 +51,13 @@ export class ArenaScene extends Phaser.Scene {
 
   constructor(private world: World, private player: Unit | null, private hooks: SceneHooks) {
     super('arena');
+  }
+
+  preload() {
+    for (const h of this.world.heroList) {
+      const key = `icon_${h.hero!.def.id}`;
+      if (!this.textures.exists(key)) this.load.svg(key, heroIconBase64(h.hero!.def.id), { width: 160, height: 160 });
+    }
   }
 
   create() {

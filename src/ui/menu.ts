@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.1 · character art, stronger minions';
+export const VERSION = 'v3.2 · hero icons, wider map';
 
 export interface Settings {
   mode: 'play' | 'manage';
@@ -100,6 +100,7 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
         el('div', { html: '<b>Boons:</b> pick one every few levels. ✦ Effect boons change how you fight (burning attacks, ricochet, echoing spells, exploding kills, cheat death) and stack if you take them again. A <b>power rune</b> spawns mid-lane about every minute: grab it for a Rare-or-better boon.' }),
         el('div', { html: '<b>Goal:</b> destroy the enemy towers, then their nexus. Your fountain heals you; theirs will melt you.' }),
       ]),
+      el('p.credits', { html: 'Hero icons by Lorc and Delapouite from <a href="https://game-icons.net" target="_blank" rel="noopener">game-icons.net</a>, licensed <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a>.' }),
     ]),
   ]);
   syncMode();

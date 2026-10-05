@@ -123,7 +123,8 @@ describe('bot manager', () => {
   it('focused enemy gets attacked', () => {
     const w = setup(13);
     run(w, 60);
-    const target = w.heroList.find((h) => h.team === 'red' && !h.dead)!;
+    const target = w.heroList.find((h) => h.team === 'red')!;
+    target.dead = false;
     for (const h of w.heroList) if (h.team === 'blue') h.hero!.focusId = target.id;
     w.rune.nextAt = 9999;
     w.rune.active = false;
@@ -132,7 +133,16 @@ describe('bot manager', () => {
     target.stunUntil = w.time + 5;
     target.hp = target.stats.maxHp;
     w.shield(target, 1e6, 5); // keep it alive so we measure targeting, not burst damage
-    for (const h of w.heroList) if (h.team === 'blue') { h.x = 1300; h.y = 550; }
+    for (const h of w.heroList) {
+      if (h.team !== 'blue') continue;
+      // Fresh, healthy bots so the check is about focus targeting.
+      h.dead = false;
+      h.hp = h.stats.maxHp;
+      h.hero!.retreating = false;
+      h.stunUntil = 0;
+      h.x = 1300;
+      h.y = 550;
+    }
     let most = 0;
     for (let i = 0; i < 30 && !target.dead; i++) {
       w.update(STEP);
@@ -211,5 +221,20 @@ describe('v3 mechanics', () => {
     const { w, me, foe } = duel();
     w.damage(me, foe, 99999, 'true');
     expect(w.events.some((e) => e.type === 'announce' && e.text === 'First Blood')).toBe(true);
+  });
+});
+
+describe('map layout', () => {
+  it('heroes attacking an outer tower are out of the inner tower range', () => {
+    const w = new World({ boonEveryLevels: 3, seed: 5 });
+    for (const team of ['blue', 'red'] as const) {
+      const towers = w.units.filter((u) => u.kind === 'tower' && u.team === team);
+      const outer = towers.find((t) => !t.structure!.protectedBy)!;
+      const inner = towers.find((t) => t.structure!.protectedBy)!;
+      // Closest a hero (even an enlarged one) can stand to the inner tower while touching the outer tower.
+      const heroRadius = 32;
+      const closest = Math.abs(outer.x - inner.x) - outer.radius - heroRadius;
+      expect(closest).toBeGreaterThan(inner.stats.attackRange + heroRadius + 20);
+    }
   });
 });

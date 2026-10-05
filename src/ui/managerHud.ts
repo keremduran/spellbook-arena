@@ -1,3 +1,4 @@
+import { heroImg } from '../game/heroIcons';
 import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
 import { DIRECTIVES, RARITIES, SLOTS, type Directive, type GameEvent, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
@@ -178,7 +179,7 @@ export class ManagerHud {
         const tag = el('span.rtag');
         const boon = el('span.rboon.hidden');
         const row = el('button.rrow', { onclick: () => this.select(u === this.selected ? null : u) }, [
-          el('span.ricon', { text: h.def.icon }),
+          el('span.ricon', {}, [heroImg(h.def)]),
           el('span.rname', {}, [el('b', { text: h.name }), stats]),
           el('span.rhp', {}, [hp]),
           tag,
@@ -248,7 +249,7 @@ export class ManagerHud {
     this.live = live;
     this.selPanel.append(
       el('div.selhead', {}, [
-        el('div.face', { style: `--hc:${h.def.color}` }, [h.def.icon, el('span.lvl', { text: String(h.level) })]),
+        el('div.face', { style: `--hc:${h.def.color}` }, [heroImg(h.def), el('span.lvl', { text: String(h.level) })]),
         el('div.bars', {}, [
           el('div.selname', {}, [el('b', { text: h.name }), el('small', { text: ` ${h.def.name} · ${u.team}${h.managed ? ' · you pick its boons' : ''}` })]),
           el('div.bar', {}, [live.hp, live.hpText]),
@@ -271,7 +272,7 @@ export class ManagerHud {
       ]),
       el('div.selrow', {}, [
         el('span.lbl', { text: 'Focus' }),
-        ...enemies.map((e) => el(`button.dir${h.focusId === e.id ? '.on' : ''}${e.dead ? '.dead' : ''}`, { title: `Focus ${e.hero!.name}`, onclick: () => this.focus([u], h.focusId === e.id ? undefined : e) }, [`${e.hero!.def.icon} ${e.hero!.name}`])),
+        ...enemies.map((e) => el(`button.dir${h.focusId === e.id ? '.on' : ''}${e.dead ? '.dead' : ''}`, { title: `Focus ${e.hero!.name}`, onclick: () => this.focus([u], h.focusId === e.id ? undefined : e) }, [heroImg(e.hero!.def, 'inline'), ` ${e.hero!.name}`])),
         el('button.dir', { title: "Whole team focuses this bot's target", onclick: () => this.focus(w.heroList.filter((a) => a.team === u.team), w.unit(h.focusId)) }, ['📣 Team']),
       ]),
       el('div.selrow', {}, [

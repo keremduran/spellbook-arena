@@ -1,5 +1,6 @@
 import { autoAim } from '../game/aim';
 import { sfx } from '../game/audio';
+import { heroImg } from '../game/heroIcons';
 import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
 import { RARITIES, SLOTS, type BoonInst, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
@@ -85,7 +86,7 @@ export class Hud {
       this.scoreboard,
       el('div.bottom', {}, [
         el('div.me', {}, [
-          el('div.face', { style: `--hc:${h.def.color}` }, [h.def.icon, this.lvl]),
+          el('div.face', { style: `--hc:${h.def.color}` }, [heroImg(h.def), this.lvl]),
           el('div.bars', {}, [
             el('div.bar', {}, [this.hpFill, this.hpText]),
             el('div.bar.xp', {}, [this.xpFill]),
@@ -283,7 +284,7 @@ export class Hud {
         open && h.boons.length > 5 ? el('button.more', { 'data-id': String(u.id) }, ['less']) : null,
       ]);
       return el(`tr.${u.team}${h.isPlayer ? '.you' : ''}`, {}, [
-        el('td', { text: `${h.def.icon} ${h.name}` }),
+        el('td', {}, [heroImg(h.def, 'inline'), ` ${h.name}`]),
         el('td', { text: String(h.level) }),
         el('td.kda', { text: `${h.kills} / ${h.deaths} / ${h.assists}` }),
         el('td.ab', { text: ab }),
@@ -369,7 +370,7 @@ export function pushFeed(feed: HTMLElement, events: GameEvent[], viewTeam: Team)
 
 /** Round hero portrait used in boon pickers and tabs. */
 export function portrait(u: Unit, size: 'sm' | 'md' = 'md') {
-  return el(`span.pface.${size}`, { style: `--hc:${u.hero!.def.color}`, title: u.hero!.name, text: u.hero!.def.icon });
+  return el(`span.pface.${size}`, { style: `--hc:${u.hero!.def.color}`, title: u.hero!.name }, [heroImg(u.hero!.def)]);
 }
 
 /** The three boon cards of an offer. */

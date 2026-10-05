@@ -4,6 +4,7 @@ import { bestBoonIndex, rollBoonOffer, type EffectId } from './boons';
 import {
   DIFFICULTY, FIRST_WAVE, FOUNTAIN, FOUNTAIN_RADIUS, LANE_Y, MAP_W, MAX_LEVEL, RANGED_THRESHOLD, RUNE_FIRST, RUNE_INTERVAL, RUNE_RADIUS,
   STRUCTURE_X, WAVE_INTERVAL, Y_MAX, Y_MIN, laneDir, mirrorX, respawnTime, xpToNext, type Difficulty,
+  ASSISTS_PER_BOON, KILLS_PER_BOON,
 } from './constants';
 import { heroBaseStats, levelScale, type HeroDef } from './heroes';
 import { Rng } from './rng';
@@ -35,8 +36,8 @@ const MINION_POWER = 1.15;
 /** XP for taking down a hero of the given level (raised so winning fights snowballs into boons). */
 const KILL_XP = (level: number) => 150 + 36 * level;
 const ASSIST_XP = (level: number) => 75 + 19 * level;
-/** Extra minion health on top of MINION_POWER. */
-const MINION_HP = 1.1;
+/** Extra minion health on top of MINION_POWER (+10%, then +20%). */
+const MINION_HP = 1.1 * 1.2;
 
 export class World {
   time = 0;
@@ -83,9 +84,9 @@ export class World {
 
   private buildBase(team: Team) {
     const tower = (hp: number): Stats => ({ ...emptyStats(), maxHp: hp, ad: 130, attackRange: 560, attackSpeed: 0.85 });
-    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(4300));
+    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(5200));
     outer.structure = { consecutive: 0 };
-    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(4700));
+    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(5600));
     inner.structure = { consecutive: 0, protectedBy: outer.id };
     const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 5200 });
     nexus.structure = { consecutive: 0, protectedBy: inner.id };
@@ -342,6 +343,10 @@ export class World {
     if (tgt.dead || amount <= 0 || tgt.invulnUntil > this.time || this.isProtected(tgt)) return 0;
     if (src.stats.execute > 0 && tgt.hp / tgt.stats.maxHp < 0.35) amount *= 1 + src.stats.execute;
     if (tgt.structure && src.kind === 'hero' && !this.minionsNear(src.team, tgt, 700)) amount *= 0.4;
+    // Structures harden against high-level heroes, so snowballing wins fights, not instant sieges.
+    if (tgt.structure && src.hero) amount /= 1 + 0.1 * (src.hero.level - 1);
+    // Minion waves are big and frequent now, so structures shrug off most minion damage.
+    if (tgt.structure && src.kind === 'creep') amount *= 0.6;
     if (tgt.structure) {
       // Fortified early (no 4-minute stomps), crumbling in overtime (no 40-minute stalemates).
       const minutes = this.time / 60;
@@ -431,7 +436,7 @@ export class World {
 
   private towerDamage(tower: Unit, t: Unit) {
     const minutes = this.time / 60;
-    if (t.kind === 'creep') return t.stats.maxHp * 0.42;
+    if (t.kind === 'creep') return t.stats.maxHp * 0.51;
     const s = tower.structure!;
     return (tower.stats.ad + minutes * 14) * (1 + 0.3 * s.consecutive);
   }
@@ -494,7 +499,7 @@ export class World {
     const ef = h.effects;
     if (inst.def.kind === 'ult' && ef.overcharge) cd *= 1 - Math.min(0.6, 0.3 * ef.overcharge);
     inst.readyAt = this.time + cd * (1 - u.stats.cdr);
-    if (ef.bulwarkCast) this.shield(u, 50 * ef.bulwarkCast * levelScale(h.level), 2.5);
+    if (ef.bulwarkCast) this.shield(u, 70 * ef.bulwarkCast * levelScale(h.level), 3);
     if (ef.echo && inst.def.kind === 'basic' && this.rng.next() < Math.min(1, 0.3 * ef.echo)) {
       const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
       this.schedule(0.3, () => {
@@ -548,17 +553,20 @@ export class World {
       if (killer?.hero) {
         killer.hero.kills++;
         this.gainXp(killer, KILL_XP(vh.level));
+        if (killer.hero.kills % KILLS_PER_BOON === 0) this.offerBoon(killer);
       }
       for (const [id, at] of victim.damagedBy) {
         const a = this.unit(id);
         if (a?.hero && a !== killer && a.team !== victim.team && this.time - at < 10) {
           a.hero.assists++;
           this.gainXp(a, ASSIST_XP(vh.level));
+          if (a.hero.assists % ASSISTS_PER_BOON === 0) this.offerBoon(a);
         }
       }
       const takedown = [killer, ...[...victim.damagedBy.keys()].map((id) => this.unit(id))].filter((a, i, arr): a is Unit => !!a?.hero && a.team !== victim.team && arr.indexOf(a) === i);
       for (const a of takedown) this.takedownEffects(a);
-      this.announceKill(killer, victim);
+      // Shutting down a hero on a 3+ kill streak earns a Rare-or-better boon.
+      if (this.announceKill(killer, victim) && killer) this.offerBoon(killer, 'rare');
       victim.damagedBy.clear();
       this.events.push({
         type: 'kill', killer: killer?.hero?.name ?? (src.kind === 'tower' ? 'Tower' : 'Minions'), killerTeam: enemy,
@@ -591,13 +599,13 @@ export class World {
     if (ef.momentum) this.addBuff(a, { id: 'momentum', duration: 4, mul: { moveSpeed: 0.35 * ef.momentum, attackSpeed: 0.35 * ef.momentum } });
   }
 
-  /** First blood, multi-kills, streaks and shutdowns. */
-  private announceKill(killer: Unit | undefined, victim: Unit) {
+  /** First blood, multi-kills, streaks and shutdowns. Returns true for a shutdown. */
+  private announceKill(killer: Unit | undefined, victim: Unit): boolean {
     const vh = victim.hero!;
     const shutdown = vh.streak >= 3;
     vh.streak = 0;
     vh.multi = 0;
-    if (!killer?.hero) return;
+    if (!killer?.hero) return false;
     const kh = killer.hero;
     kh.streak++;
     kh.multi = this.time - kh.multiAt < 10 ? kh.multi + 1 : 1;
@@ -612,6 +620,7 @@ export class World {
     else if (shutdown) text = 'Shutdown';
     else if (STREAK[kh.streak]) text = STREAK[kh.streak];
     if (text) this.events.push({ type: 'announce', text, sub: kh.name, team: killer.team, unitId: killer.id });
+    return shutdown;
   }
 
   gainXp(u: Unit, amount: number) {
@@ -630,9 +639,9 @@ export class World {
     if (h.level >= MAX_LEVEL) h.xp = 0;
   }
 
-  offerBoon(u: Unit) {
+  offerBoon(u: Unit, minRarity: Rarity = 'common') {
     const h = u.hero!;
-    h.offers.push(rollBoonOffer(this.rng, 3, 'common', h.boons));
+    h.offers.push(rollBoonOffer(this.rng, 3, minRarity, h.boons));
     if (h.isPlayer || h.managed) this.events.push({ type: 'offer', unitId: u.id });
     else this.pickBoon(u, bestBoonIndex(h.offers[0]));
   }

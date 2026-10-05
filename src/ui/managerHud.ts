@@ -1,5 +1,5 @@
 import { heroImg } from '../game/heroIcons';
-import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
+import { MAP_H, MAP_W, MAX_LEVEL, xpToNext } from '../sim/constants';
 import { DIRECTIVES, RARITIES, SLOTS, type Directive, type GameEvent, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
 import { clear, el } from './dom';
@@ -229,7 +229,7 @@ export class ManagerHud {
     const live = this.live!;
     live.hp.style.width = `${(u.hp / s.maxHp) * 100}%`;
     live.hpText.textContent = u.dead ? `Respawning in ${Math.ceil(h.respawnAt - w.time)}s` : `${Math.min(Math.ceil(u.hp), Math.round(s.maxHp))} / ${Math.round(s.maxHp)}`;
-    live.xp.style.width = `${h.level >= 18 ? 100 : (h.xp / xpToNext(h.level)) * 100}%`;
+    live.xp.style.width = `${h.level >= MAX_LEVEL ? 100 : (h.xp / xpToNext(h.level)) * 100}%`;
     live.stat.textContent = `⚔ ${Math.round(s.ad)}  ⚡ ${s.attackSpeed.toFixed(2)}  👟 ${Math.round(s.moveSpeed)}  🔮 ${Math.round(s.spellPower * 100)}%`;
     for (const slot of SLOTS) {
       const cd = live.cds[slot];

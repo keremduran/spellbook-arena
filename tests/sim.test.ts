@@ -5,7 +5,7 @@ import { botPicks, buildBotRoster, buildRoster, rollDraft } from '../src/sim/dra
 import { EFFECT_BOONS } from '../src/sim/boons';
 import { HEROES } from '../src/sim/heroes';
 import { Rng } from '../src/sim/rng';
-import { SLOTS, type Rarity } from '../src/sim/types';
+import { SLOTS, type Rarity, type Unit } from '../src/sim/types';
 import { World } from '../src/sim/world';
 
 function botMatch(seed: number, teamSize = 5) {
@@ -250,5 +250,53 @@ describe('pathing', () => {
     expect(blue.length).toBeGreaterThan(0);
     const firstWave = blue.slice(0, 6);
     for (const c of firstWave) expect({ id: c.id, x: Math.round(c.x), passed: c.x > outer.x + outer.radius }).toMatchObject({ passed: true });
+  });
+});
+
+describe('takedown boons and max level', () => {
+  const arena = () => {
+    const w = new World({ boonEveryLevels: 0, seed: 31 });
+    w.rune.nextAt = 9999;
+    const me = w.addHero({ def: HEROES[0], team: 'blue', name: 'me', isPlayer: true, picks: {} });
+    const ally = w.addHero({ def: HEROES[1], team: 'blue', name: 'ally', isPlayer: true, picks: {} });
+    const foe = w.addHero({ def: HEROES[2], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    return { w, me, ally, foe };
+  };
+  const killFoe = (w: World, killer: Unit, foe: Unit, helper?: Unit) => {
+    foe.dead = false;
+    foe.hp = foe.stats.maxHp;
+    if (helper) w.damage(helper, foe, 1, 'true');
+    w.damage(killer, foe, 1e7, 'true');
+  };
+
+  it('every 4th kill earns a boon', () => {
+    const { w, me, foe } = arena();
+    for (let i = 0; i < 3; i++) killFoe(w, me, foe);
+    expect(me.hero!.offers).toHaveLength(0);
+    killFoe(w, me, foe);
+    expect(me.hero!.offers).toHaveLength(1);
+  });
+
+  it('every 8th assist earns a boon', () => {
+    const { w, me, ally, foe } = arena();
+    for (let i = 0; i < 7; i++) killFoe(w, ally, foe, me);
+    expect(me.hero!.assists).toBe(7);
+    expect(me.hero!.offers).toHaveLength(0);
+    killFoe(w, ally, foe, me);
+    expect(me.hero!.offers).toHaveLength(1);
+  });
+
+  it('a shutdown earns a rare-or-better boon', () => {
+    const { w, me, foe } = arena();
+    foe.hero!.streak = 3;
+    killFoe(w, me, foe);
+    expect(me.hero!.offers).toHaveLength(1);
+    expect(me.hero!.offers[0].every((b) => b.rarity !== 'common')).toBe(true);
+  });
+
+  it('heroes can reach level 21', () => {
+    const { w, me } = arena();
+    w.gainXp(me, 1e7);
+    expect(me.hero!.level).toBe(21);
   });
 });

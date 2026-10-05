@@ -29,8 +29,8 @@ export const HEROES: HeroDef[] = [
   { id: 'monk', name: 'Monk', role: 'Brawler', icon: '🥋', color: '#a1887f', hp: 740, regen: 6, ad: 52, attackSpeed: 1.0, range: 75, moveSpeed: 325, spellPower: 1.0 },
 ];
 
-/** All heroes have 10% more health than their listed base. */
-const HERO_TANKINESS = 1.1;
+/** All heroes have more health than their listed base: +10%, then +20% on top. */
+const HERO_TANKINESS = 1.1 * 1.2;
 
 export const heroBaseStats = (def: HeroDef, level: number): Stats => {
   const l = level - 1;

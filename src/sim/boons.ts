@@ -52,7 +52,7 @@ export const EFFECT_BOONS: BoonDef[] = [
   { id: 'detonate', effect: 'detonate', name: 'Detonate', icon: '💣', kind: 'effect', desc: (m) => `Enemies you kill explode for ${pct(Math.min(0.5, 0.15 * m))} of their max health to nearby enemies.` },
   { id: 'momentum', effect: 'momentum', name: 'Momentum', icon: '🌪️', kind: 'effect', desc: (m) => `Takedowns give ${pct(0.35 * m)} move speed and attack speed for 4s.` },
   { id: 'secondWind', effect: 'secondWind', name: 'Second Wind', icon: '🪽', kind: 'effect', desc: (m) => `Once per life, survive a killing blow and become untouchable for ${(1 + 0.5 * m).toFixed(1)}s.` },
-  { id: 'bulwarkCast', effect: 'bulwarkCast', name: 'Spellshield', icon: '🔰', kind: 'effect', desc: (m) => `Casting an ability shields you for ${n(50 * m)} for 2.5s.` },
+  { id: 'bulwarkCast', effect: 'bulwarkCast', name: 'Spellshield', icon: '🔰', kind: 'effect', desc: (m) => `Casting an ability shields you for ${n(70 * m)} for 3s.` },
 ];
 
 export const BOONS: BoonDef[] = [...STAT_BOONS, ...EFFECT_BOONS];

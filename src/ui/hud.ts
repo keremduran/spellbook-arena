@@ -1,7 +1,7 @@
 import { autoAim } from '../game/aim';
 import { sfx } from '../game/audio';
 import { heroImg } from '../game/heroIcons';
-import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
+import { MAP_H, MAP_W, MAX_LEVEL, xpToNext } from '../sim/constants';
 import { RARITIES, SLOTS, type BoonInst, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
 import { clear, el } from './dom';
@@ -223,7 +223,7 @@ export class Hud {
     this.clock.textContent = fmtTime(w.time);
     this.hpFill.style.width = `${(u.hp / u.stats.maxHp) * 100}%`;
     this.hpText.textContent = `${Math.min(Math.ceil(u.hp), Math.round(u.stats.maxHp))} / ${Math.round(u.stats.maxHp)}${u.shield > 0 ? ` (+${Math.round(u.shield)})` : ''}`;
-    this.xpFill.style.width = h.level >= 18 ? '100%' : `${(h.xp / xpToNext(h.level)) * 100}%`;
+    this.xpFill.style.width = h.level >= MAX_LEVEL ? '100%' : `${(h.xp / xpToNext(h.level)) * 100}%`;
     this.lvl.textContent = String(h.level);
     const s = u.stats;
     this.statline.textContent = `⚔ ${Math.round(s.ad)}  ⚡ ${s.attackSpeed.toFixed(2)}  👟 ${Math.round(s.moveSpeed)}  🔮 ${Math.round(s.spellPower * 100)}%  ⏱ ${Math.round(s.cdr * 100)}%`;

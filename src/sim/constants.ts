@@ -8,7 +8,7 @@ export const Y_MIN = 170;
 export const Y_MAX = 930;
 
 export const STEP = 1 / 30;
-export const MAX_LEVEL = 18;
+export const MAX_LEVEL = 21;
 
 export const FOUNTAIN: Record<Team, { x: number; y: number }> = {
   blue: { x: 130, y: LANE_Y },
@@ -26,17 +26,22 @@ export const mirrorX = (team: Team, x: number) => (team === 'blue' ? x : MAP_W -
 export const laneDir = (team: Team) => (team === 'blue' ? 1 : -1);
 
 export const FIRST_WAVE = 8;
-/** 24s / 1.15: waves arrive 15% more often. */
-export const WAVE_INTERVAL = 21;
+/** 21s / 1.2: waves arrive 20% more often. */
+export const WAVE_INTERVAL = 17.5;
 export const RANGED_THRESHOLD = 200;
 
-export const xpToNext = (level: number) => 130 + 55 * level;
+/** Slower curve so the extra levels (max 21) arrive late in the match. */
+export const xpToNext = (level: number) => 160 + 75 * level;
 export const respawnTime = (level: number) => 3 + 1.1 * level;
 
 /** Mid-lane power rune: grabbing it grants a Rare-or-better boon choice. */
 export const RUNE_FIRST = 45;
 export const RUNE_INTERVAL = 50;
 export const RUNE_RADIUS = 34;
+
+/** Takedown boons: every Nth kill or assist earns a boon, whatever your level. */
+export const KILLS_PER_BOON = 4;
+export const ASSISTS_PER_BOON = 8;
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 export const DIFFICULTY: Record<Difficulty, { castChance: number; damage: number }> = {

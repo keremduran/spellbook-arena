@@ -158,9 +158,9 @@ const BASICS: AbilityDef[] = [
   {
     id: 'iron_skin', name: 'Iron Skin', icon: '🪨', color: '#bdbdbd', kind: 'basic', tags: ['shield'],
     cooldown: 9, range: 0, ai: 'heal',
-    desc: (p) => `Gain a ${n(170 * p)} damage shield for 3.5s.`,
+    desc: (p) => `Gain a ${n(230 * p)} damage shield for 4s.`,
     cast: (w, u, c) => {
-      w.shield(u, 170 * c.p, 3.5);
+      w.shield(u, 230 * c.p, 4);
     },
   },
   {

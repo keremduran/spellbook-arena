@@ -22,7 +22,10 @@ export class Hud {
   private slots = {} as Record<Slot, { btn: HTMLElement; cd: HTMLElement }>;
   private boons = el('div.boons.hidden');
   private death = el('div.death.hidden');
-  private scoreboard = el('div.scoreboard.hidden');
+  private scoreTable = el('div');
+  private scoreboard = el('div.scoreboard.hidden', {}, [
+    el('div.sbwrap', {}, [el('button.sbclose', { title: 'Close' }, ['✕']), this.scoreTable, el('div.sbhint', { text: 'Tap anywhere to close' })]),
+  ]);
   private acc = 1;
   private offerShown = -1;
   /** Set by main: touch drag-to-aim preview in the scene. */
@@ -71,7 +74,7 @@ export class Hud {
     this.root = el('div.hud', {}, [
       el('div.topbar', {}, [this.kBlue, this.clock, this.kRed]),
       el('div.topbtns', {}, [
-        el('button.iconbtn', { title: 'Scoreboard', onclick: () => this.scoreboard.classList.toggle('hidden') }, ['📊']),
+        el('button.iconbtn', { title: 'Scoreboard', onclick: () => this.showScoreboard(this.scoreboard.classList.contains('hidden')) }, ['📊']),
         ...soundButtons(),
         el('button.iconbtn', { title: 'Pause', onclick: () => onPause() }, ['⏸']),
       ]),
@@ -92,6 +95,12 @@ export class Hud {
         el('div.slots', {}, [...slotEls, atk]),
       ]),
     ]);
+    // The scoreboard covers the screen, so a tap or click anywhere on it closes it.
+    this.scoreboard.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.showScoreboard(false);
+    });
     parent.append(this.root);
   }
 
@@ -237,7 +246,7 @@ export class Hud {
   }
 
   private renderScoreboard() {
-    clear(this.scoreboard);
+    clear(this.scoreTable);
     const rows = [...this.world.heroList].sort((a, b) => (a.team === b.team ? 0 : a.team === 'blue' ? -1 : 1)).map((u) => {
       const h = u.hero!;
       const ab = SLOTS.map((s) => h.abilities[s]?.def.icon ?? '·').join('');
@@ -250,7 +259,7 @@ export class Hud {
         el('td.ab', { text: boons || '—' }),
       ]);
     });
-    this.scoreboard.append(el('table', {}, [
+    this.scoreTable.append(el('table', {}, [
       el('tr', {}, ['Hero', 'Lvl', 'K / D / A', 'P Q W E R', 'Boons'].map((t) => el('th', { text: t }))),
       ...rows,
     ]));

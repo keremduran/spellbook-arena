@@ -440,3 +440,8 @@ body.touch .hud .slot.passive { right: 178px; bottom: 112px; width: 44px; height
   body.touch .hud:not(.manager) .boons { right: auto; left: 31vw; width: 46vw; }
   body.touch .boon p { -webkit-line-clamp: 5; }
 }
+.hud .scoreboard { pointer-events: auto; cursor: pointer; }
+.sbwrap { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; }
+.sbclose { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: #222c38; color: var(--text); font-size: 14px; z-index: 1; }
+.sbhint { color: var(--muted); font-size: 12px; }
+@media (max-height: 520px) { .scoreboard table { font-size: 11px; } .scoreboard td, .scoreboard th { padding: 3px 6px; } }

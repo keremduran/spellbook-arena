@@ -1,0 +1,118 @@
+import Phaser from 'phaser';
+import './style.css';
+import { ArenaScene } from './game/ArenaScene';
+import { buildRoster, randomPicks, rollDraft, type Picks } from './sim/draft';
+import { HEROES, type HeroDef } from './sim/heroes';
+import { Rng } from './sim/rng';
+import { RARITIES, SLOTS, type Team, type Unit } from './sim/types';
+import { World } from './sim/world';
+import { el } from './ui/dom';
+import { showDraft } from './ui/draftScreen';
+import { Hud } from './ui/hud';
+import { renderMenu, type Settings } from './ui/menu';
+import { createJoystick, isTouchDevice } from './ui/touch';
+
+const ui = document.getElementById('ui')!;
+const params = new URLSearchParams(location.search);
+if (isTouchDevice()) document.body.classList.add('touch');
+
+let game: Phaser.Game | null = null;
+
+function menu() {
+  renderMenu(ui, (settings) => startDraft(settings));
+}
+
+function startDraft(settings: Settings) {
+  const seed = Number(params.get('seed')) || Math.floor(Math.random() * 2 ** 31);
+  const rng = new Rng(seed);
+  const hero = rng.pick(HEROES);
+  const draft = rollDraft(rng);
+  // ?quick skips the draft (handy for testing).
+  if (params.has('quick')) return startMatch(settings, rng, seed, hero, randomPicks(draft, rng));
+  showDraft(ui, hero, draft, rng, (picks) => startMatch(settings, rng, seed, hero, picks));
+}
+
+function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, picks: Picks) {
+  const world = new World({ boonEveryLevels: settings.boonEveryLevels, seed });
+  for (const s of buildRoster(rng, settings.teamSize, { def: hero, picks, name: settings.name })) world.addHero(s);
+  const player = world.heroList.find((u) => u.hero!.isPlayer)!;
+
+  let paused = false;
+  let pauseBox: HTMLElement | null = null;
+  const togglePause = () => {
+    if (world.winner) return;
+    paused = !paused;
+    if (paused) {
+      pauseBox = el('div.screen.overlay', {}, [
+        el('div.pausebox.panel', {}, [
+          el('h2.title', { text: 'Paused', style: 'font-size:40px;margin-bottom:18px' }),
+          el('div', { style: 'display:flex;gap:10px;justify-content:center' }, [
+            el('button.btn-primary', { onclick: togglePause }, ['Resume']),
+            el('button.btn-ghost', { onclick: () => { paused = false; pauseBox?.remove(); teardown(); menu(); } }, ['Quit']),
+          ]),
+        ]),
+      ]);
+      ui.append(pauseBox);
+    } else pauseBox?.remove();
+  };
+
+  const hud = new Hud(ui, world, player, togglePause);
+  const joystick = isTouchDevice() ? createJoystick(hud.root, player) : null;
+  let ended = false;
+
+  const scene = new ArenaScene(world, player, {
+    onEvents: (events) => {
+      hud.onEvents(events);
+      const end = events.find((e) => e.type === 'end');
+      if (end && end.type === 'end' && !ended) {
+        ended = true;
+        setTimeout(() => showEnd(world, player, end.winner), 1200);
+      }
+    },
+    onFrame: (dt) => hud.update(dt),
+    onBoonKey: (i) => hud.pickBoon(i),
+    onToggleScoreboard: (show) => hud.showScoreboard(show),
+    onPause: togglePause,
+    isPaused: () => paused,
+  });
+
+  game = new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'game',
+    backgroundColor: '#0c140f',
+    scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight },
+    input: { activePointers: 3 },
+    scene,
+    banner: false,
+  });
+
+  const teardown = () => {
+    hud.destroy();
+    joystick?.remove();
+    game?.destroy(true);
+    game = null;
+  };
+
+  // Exposed for debugging and automated browser checks.
+  (window as unknown as { __match: unknown }).__match = { world, player, hud };
+
+  function showEnd(w: World, me: Unit, winner: Team) {
+    const h = me.hero!;
+    const won = winner === me.team;
+    const build = [
+      ...SLOTS.map((s) => h.abilities[s]).filter((a) => !!a).map((a) => el('span', { style: `--rc:${RARITIES[a!.rarity].color}`, text: `${a!.def.icon} ${a!.def.name}` })),
+      ...h.boons.map((b) => el('span', { style: `--rc:${RARITIES[b.rarity].color}`, text: `${b.def.icon} ${b.def.name}` })),
+    ];
+    const box = el('div.screen.overlay', {}, [
+      el('div.endbox.panel', {}, [
+        el(`h1.title.${won ? 'win' : 'lose'}`, { text: won ? 'Victory' : 'Defeat' }),
+        el('p.summary', { text: `${Math.floor(w.time / 60)} min · ${h.def.name} level ${h.level} · ${h.kills} / ${h.deaths} / ${h.assists}` }),
+        el('div.build', {}, build),
+        el('button.btn-primary', { onclick: () => { box.remove(); teardown(); menu(); } }, ['Play again']),
+      ]),
+    ]);
+    ui.append(box);
+  }
+}
+
+menu();

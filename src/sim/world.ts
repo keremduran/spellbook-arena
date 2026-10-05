@@ -1,0 +1,814 @@
+import { thinkCreep, thinkHero } from './ai';
+import type { AbilityDef } from './abilities';
+import { bestBoonIndex, rollBoonOffer } from './boons';
+import {
+  FIRST_WAVE, FOUNTAIN, FOUNTAIN_RADIUS, LANE_Y, MAP_W, MAX_LEVEL, RANGED_THRESHOLD, STRUCTURE_X, WAVE_INTERVAL,
+  Y_MAX, Y_MIN, laneDir, mirrorX, respawnTime, xpToNext,
+} from './constants';
+import { heroBaseStats, levelScale, type HeroDef } from './heroes';
+import { Rng } from './rng';
+import {
+  RARITIES, STAT_KEYS, emptyStats, otherTeam,
+  type AbilityInst, type Fx, type GameEvent, type Mods, type Nova, type Projectile, type Rarity, type Slot,
+  type Stats, type Team, type Unit, type UnitKind, type Vec, type Zone,
+} from './types';
+
+export interface WorldOptions {
+  /** Pick a boon every N levels (0 = never). */
+  boonEveryLevels: number;
+  seed?: number;
+}
+
+export interface HeroSetup {
+  def: HeroDef;
+  team: Team;
+  name: string;
+  isPlayer?: boolean;
+  picks: Partial<Record<Slot, { def: AbilityDef; rarity: Rarity }>>;
+}
+
+const len = (x: number, y: number) => Math.hypot(x, y);
+
+export class World {
+  time = 0;
+  units: Unit[] = [];
+  heroList: Unit[] = [];
+  projectiles: Projectile[] = [];
+  zones: Zone[] = [];
+  novas: Nova[] = [];
+  fxList: Fx[] = [];
+  events: GameEvent[] = [];
+  winner: Team | null = null;
+  kills: Record<Team, number> = { blue: 0, red: 0 };
+  rng: Rng;
+  /** Set by an ability's cast to replace its cooldown for this cast only. */
+  cooldownOverride: number | null = null;
+
+  private nextId = 1;
+  private nextWave = FIRST_WAVE;
+  private waveCount = 0;
+  private scheduled: { at: number; fn: () => void }[] = [];
+  private byId = new Map<number, Unit>();
+
+  constructor(public opts: WorldOptions) {
+    this.rng = new Rng(opts.seed ?? Math.floor(Math.random() * 2 ** 31));
+    for (const team of ['blue', 'red'] as Team[]) this.buildBase(team);
+  }
+
+  // ------------------------------------------------------------------ setup
+
+  private makeUnit(kind: UnitKind, team: Team, x: number, y: number, radius: number, base: Stats): Unit {
+    const u: Unit = {
+      id: this.nextId++, kind, team, x, y, radius, hp: base.maxHp, stats: { ...base }, baseStats: base, dead: false,
+      attackCd: 0, facing: { x: laneDir(team), y: 0 }, order: { kind: 'idle' },
+      stunUntil: 0, slowUntil: 0, slowPct: 0, stealthUntil: 0, invulnUntil: 0, shield: 0, shieldUntil: 0,
+      buffs: [], damagedBy: new Map(), lastHitHeroAt: -99,
+    };
+    this.units.push(u);
+    this.byId.set(u.id, u);
+    return u;
+  }
+
+  private buildBase(team: Team) {
+    const tower = (hp: number): Stats => ({ ...emptyStats(), maxHp: hp, ad: 130, attackRange: 560, attackSpeed: 0.85 });
+    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(2600));
+    outer.structure = { consecutive: 0 };
+    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(3000));
+    inner.structure = { consecutive: 0, protectedBy: outer.id };
+    const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 4200 });
+    nexus.structure = { consecutive: 0, protectedBy: inner.id };
+  }
+
+  addHero(setup: HeroSetup): Unit {
+    const f = FOUNTAIN[setup.team];
+    const base = heroBaseStats(setup.def, 1);
+    const u = this.makeUnit('hero', setup.team, f.x + laneDir(setup.team) * 60, f.y + this.rng.range(-120, 120), 24, base);
+    const abilities: Partial<Record<Slot, AbilityInst>> = {};
+    for (const [slot, pick] of Object.entries(setup.picks)) {
+      if (pick) abilities[slot as Slot] = { def: pick.def, rarity: pick.rarity, readyAt: 0 };
+    }
+    u.hero = {
+      def: setup.def, name: setup.name, isPlayer: !!setup.isPlayer, level: 1, xp: 0, kills: 0, deaths: 0, assists: 0,
+      respawnAt: 0, abilities, boons: [], offers: [], attackCount: 0, lastCombatAt: -99, moveDir: null,
+      retreating: false, nextThink: 0, laneOffset: this.rng.range(-170, 170),
+    };
+    this.recompute(u);
+    u.hp = u.stats.maxHp;
+    this.heroList.push(u);
+    return u;
+  }
+
+  unit(id: number | undefined) {
+    return id === undefined ? undefined : this.byId.get(id);
+  }
+
+  // ------------------------------------------------------------------ queries
+
+  isVisible(t: Unit, team: Team) {
+    return t.team === team || t.stealthUntil <= this.time;
+  }
+
+  isProtected(t: Unit) {
+    const p = this.unit(t.structure?.protectedBy);
+    return !!p && !p.dead;
+  }
+
+  /** Can `u` attack `t` right now (alive, enemy, visible, not invulnerable/protected)? */
+  attackable(u: Unit, t: Unit) {
+    return !t.dead && t.team !== u.team && this.isVisible(t, u.team) && t.invulnUntil <= this.time && !this.isProtected(t);
+  }
+
+  enemiesNear(team: Team, x: number, y: number, r: number, opts: { heroesOnly?: boolean; structures?: boolean } = {}) {
+    return this.units.filter((t) => {
+      if (t.dead || t.team === team || t.invulnUntil > this.time) return false;
+      if (opts.heroesOnly && t.kind !== 'hero') return false;
+      if (!opts.structures && (t.kind === 'tower' || t.kind === 'nexus')) return false;
+      return len(t.x - x, t.y - y) <= r + t.radius;
+    });
+  }
+
+  alliesNear(team: Team, x: number, y: number, r: number, heroesOnly = false) {
+    return this.units.filter((t) => !t.dead && t.team === team && (!heroesOnly || t.kind === 'hero') && len(t.x - x, t.y - y) <= r + t.radius);
+  }
+
+  /** Nearest visible enemy (hero or creep) to `point`, within `range` of the caster. */
+  nearestEnemyTo(team: Team, point: Vec, range: number, caster: Unit, heroesOnly = false) {
+    let best: Unit | undefined;
+    let bestD = Infinity;
+    for (const t of this.units) {
+      if (t.dead || t.team === team || !this.isVisible(t, team) || t.invulnUntil > this.time) continue;
+      if (t.kind === 'tower' || t.kind === 'nexus') continue;
+      if (heroesOnly && t.kind !== 'hero') continue;
+      if (len(t.x - caster.x, t.y - caster.y) > range + t.radius) continue;
+      const d = len(t.x - point.x, t.y - point.y) - (t.kind === 'hero' ? 80 : 0);
+      if (d < bestD) {
+        bestD = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  power(u: Unit, rarity: Rarity) {
+    return RARITIES[rarity].mult * u.stats.spellPower * levelScale(u.hero?.level ?? 1);
+  }
+
+  // ------------------------------------------------------------------ effects API (used by abilities)
+
+  projectile(o: { owner: Unit; dir: Vec; speed: number; range: number; radius: number; color: string; pierce?: boolean; onHit: (t: Unit) => void }) {
+    this.projectiles.push({
+      id: this.nextId++, owner: o.owner, team: o.owner.team, x: o.owner.x, y: o.owner.y, vx: o.dir.x * o.speed, vy: o.dir.y * o.speed,
+      speed: o.speed, radius: o.radius, range: o.range, traveled: 0, color: o.color, pierce: !!o.pierce, hit: new Set(), onHit: o.onHit,
+    });
+  }
+
+  nova(o: { owner: Unit; x: number; y: number; radius: number; delay: number; color: string; onHit: (t: Unit) => void }) {
+    this.novas.push({ owner: o.owner, team: o.owner.team, x: o.x, y: o.y, radius: o.radius, start: this.time, at: this.time + o.delay, color: o.color, onHit: o.onHit });
+  }
+
+  zone(o: { owner: Unit; x: number; y: number; radius: number; duration: number; dps: number; slowPct?: number; pull?: number; color: string; follow?: boolean }) {
+    this.zones.push({
+      owner: o.owner, team: o.owner.team, x: o.x, y: o.y, radius: o.radius, until: this.time + o.duration, dps: o.dps,
+      slowPct: o.slowPct ?? 0, pull: o.pull ?? 0, color: o.color, follow: !!o.follow, nextTick: this.time,
+    });
+  }
+
+  dash(u: Unit, dir: Vec, dist: number, speed: number, o: { damage?: number; radius?: number; stun?: number; onEnd?: () => void } = {}) {
+    u.dash = {
+      vx: dir.x * speed, vy: dir.y * speed, until: this.time + dist / speed, hit: new Set(),
+      damage: o.damage ?? 0, radius: o.radius ?? 0, stun: o.stun ?? 0, onEnd: o.onEnd,
+    };
+  }
+
+  blinkTo(u: Unit, aim: Vec, maxRange: number) {
+    const dx = aim.x - u.x;
+    const dy = aim.y - u.y;
+    const d = len(dx, dy);
+    const k = d > maxRange ? maxRange / d : 1;
+    this.fx({ kind: 'burst', x: u.x, y: u.y, r: 50, color: '#b388ff', duration: 0.35 });
+    this.moveUnit(u, u.x + dx * k, u.y + dy * k);
+    this.fx({ kind: 'burst', x: u.x, y: u.y, r: 50, color: '#b388ff', duration: 0.35 });
+  }
+
+  moveUnit(u: Unit, x: number, y: number) {
+    u.x = Math.max(30, Math.min(MAP_W - 30, x));
+    u.y = Math.max(Y_MIN, Math.min(Y_MAX, y));
+  }
+
+  addBuff(u: Unit, b: { id: string; duration: number } & Mods) {
+    u.buffs = u.buffs.filter((x) => x.id !== b.id);
+    u.buffs.push({ id: b.id, until: this.time + b.duration, add: b.add, mul: b.mul });
+  }
+
+  stun(t: Unit, dur: number) {
+    if (t.kind === 'tower' || t.kind === 'nexus') return;
+    t.stunUntil = Math.max(t.stunUntil, this.time + dur);
+    t.dash = undefined;
+  }
+
+  slow(t: Unit, pct: number, dur: number) {
+    if (t.slowUntil > this.time && t.slowPct > pct) return;
+    t.slowPct = pct;
+    t.slowUntil = this.time + dur;
+  }
+
+  knockback(t: Unit, fromX: number, fromY: number, dist: number) {
+    if (t.kind !== 'hero' && t.kind !== 'creep') return;
+    const dx = t.x - fromX;
+    const dy = t.y - fromY;
+    const d = len(dx, dy) || 1;
+    this.moveUnit(t, t.x + (dx / d) * dist, t.y + (dy / d) * dist);
+  }
+
+  heal(u: Unit, amount: number, silent = false) {
+    if (u.dead || amount <= 0) return;
+    const before = u.hp;
+    u.hp = Math.min(u.stats.maxHp, u.hp + amount);
+    if (!silent && u.hp - before >= 1) {
+      this.events.push({ type: 'damage', x: u.x, y: u.y, amount: u.hp - before, crit: false, srcId: u.id, tgtId: u.id, heal: true });
+    }
+  }
+
+  shield(u: Unit, amount: number, dur: number) {
+    u.shield = Math.max(u.shield, amount);
+    u.shieldUntil = this.time + dur;
+  }
+
+  stealth(u: Unit, dur: number) {
+    u.stealthUntil = this.time + dur;
+  }
+
+  invuln(u: Unit, dur: number) {
+    u.invulnUntil = this.time + dur;
+    u.dash = undefined;
+  }
+
+  fx(f: Omit<Fx, 'start' | 'until'> & { duration: number }) {
+    const { duration, ...rest } = f;
+    this.fxList.push({ ...rest, start: this.time, until: this.time + duration });
+  }
+
+  schedule(delay: number, fn: () => void) {
+    this.scheduled.push({ at: this.time + delay, fn });
+  }
+
+  chain(u: Unit, first: Unit, bounces: number, hopRange: number, damage: number, color: string) {
+    const hit = new Set<number>();
+    let cur: Unit | undefined = first;
+    let px = u.x;
+    let py = u.y;
+    for (let i = 0; i < bounces && cur; i++) {
+      hit.add(cur.id);
+      this.fx({ kind: 'line', x: px, y: py, x2: cur.x, y2: cur.y, r: 0, color, duration: 0.3, width: 3 });
+      this.damage(u, cur, damage, 'spell');
+      px = cur.x;
+      py = cur.y;
+      const from: Unit = cur;
+      cur = this.enemiesNear(u.team, from.x, from.y, hopRange)
+        .filter((t) => !hit.has(t.id) && this.isVisible(t, u.team))
+        .sort((a, b) => len(a.x - from.x, a.y - from.y) - len(b.x - from.x, b.y - from.y))[0];
+    }
+  }
+
+  lineHit(u: Unit, dir: Vec, length: number, halfWidth: number, fn: (t: Unit) => void) {
+    for (const t of this.enemiesNear(u.team, u.x, u.y, length)) {
+      const rx = t.x - u.x;
+      const ry = t.y - u.y;
+      const along = rx * dir.x + ry * dir.y;
+      const perp = Math.abs(rx * dir.y - ry * dir.x);
+      if (along >= -t.radius && along <= length && perp <= halfWidth + t.radius) fn(t);
+    }
+  }
+
+  // ------------------------------------------------------------------ combat
+
+  /** Deals damage and returns the amount actually dealt to health. */
+  damage(src: Unit, tgt: Unit, amount: number, type: 'attack' | 'spell' | 'true', crit = false): number {
+    if (tgt.dead || amount <= 0 || tgt.invulnUntil > this.time || this.isProtected(tgt)) return 0;
+    if (src.stats.execute > 0 && tgt.hp / tgt.stats.maxHp < 0.35) amount *= 1 + src.stats.execute;
+    amount *= 1 - tgt.stats.damageReduction;
+    if (tgt.shield > 0) {
+      const absorbed = Math.min(tgt.shield, amount);
+      tgt.shield -= absorbed;
+      amount -= absorbed;
+    }
+    const dealt = Math.min(tgt.hp, amount);
+    tgt.hp -= amount;
+
+    if (src.hero) {
+      src.hero.lastCombatAt = this.time;
+      if (type === 'attack' && src.stats.lifesteal > 0) this.heal(src, dealt * src.stats.lifesteal, true);
+      if (type === 'spell' && src.stats.spellVamp > 0) this.heal(src, dealt * src.stats.spellVamp, true);
+      tgt.damagedBy.set(src.id, this.time);
+      if (tgt.kind === 'hero') src.lastHitHeroAt = this.time;
+    }
+    if (tgt.hero) tgt.hero.lastCombatAt = this.time;
+    if (type !== 'true' && tgt.stats.thorns > 0 && src !== tgt && !src.dead && src.kind !== 'tower') {
+      this.damage(tgt, src, amount * tgt.stats.thorns, 'true');
+    }
+    if (src.kind === 'hero' || tgt.kind === 'hero') {
+      this.events.push({ type: 'damage', x: tgt.x, y: tgt.y - tgt.radius, amount, crit, srcId: src.id, tgtId: tgt.id });
+    }
+    if (tgt.hp <= 0) this.kill(tgt, src);
+    return dealt;
+  }
+
+  private attackHit(u: Unit, t: Unit) {
+    if (t.dead || u.dead) return;
+    let dmg = u.stats.ad;
+    const crit = this.rng.next() < u.stats.critChance;
+    if (crit) dmg *= 1.75;
+    dmg += u.stats.onHitDamage;
+    if (u.kind === 'tower') dmg = this.towerDamage(u, t);
+    if (u.hero) u.hero.attackCount++;
+    this.damage(u, t, dmg, 'attack', crit);
+    const passive = u.hero?.abilities.P;
+    if (passive?.def.onAttack && !t.dead) passive.def.onAttack(this, u, t, RARITIES[passive.rarity].mult, this.power(u, passive.rarity));
+  }
+
+  private towerDamage(tower: Unit, t: Unit) {
+    const minutes = this.time / 60;
+    if (t.kind === 'creep') return t.stats.maxHp * 0.42;
+    const s = tower.structure!;
+    return (tower.stats.ad + minutes * 14) * (1 + 0.3 * s.consecutive);
+  }
+
+  private performAttack(u: Unit, t: Unit) {
+    u.attackCd = 1 / Math.max(0.1, u.stats.attackSpeed);
+    const dx = t.x - u.x;
+    const dy = t.y - u.y;
+    const d = len(dx, dy) || 1;
+    u.facing = { x: dx / d, y: dy / d };
+    if (u.hero) {
+      u.stealthUntil = 0;
+      u.hero.lastCombatAt = this.time;
+    }
+    if (u.kind === 'tower') {
+      const s = u.structure!;
+      s.consecutive = s.targetId === t.id && t.kind === 'hero' ? s.consecutive + 1 : 0;
+      s.targetId = t.id;
+    }
+    const ranged = u.kind === 'tower' || u.stats.attackRange >= RANGED_THRESHOLD;
+    if (ranged) {
+      this.projectiles.push({
+        id: this.nextId++, owner: u, team: u.team, x: u.x, y: u.y, vx: 0, vy: 0, speed: u.kind === 'tower' ? 1300 : 1100,
+        radius: u.kind === 'tower' ? 12 : 7, range: 99999, traveled: 0,
+        color: u.kind === 'tower' ? (u.team === 'blue' ? '#90caf9' : '#ef9a9a') : u.hero ? '#fff8e1' : '#cfd8dc',
+        pierce: false, hit: new Set(), targetId: t.id, onHit: (tt) => this.attackHit(u, tt),
+      });
+    } else {
+      this.attackHit(u, t);
+    }
+  }
+
+  inAttackRange(u: Unit, t: Unit) {
+    return len(t.x - u.x, t.y - u.y) <= u.stats.attackRange + u.radius + t.radius;
+  }
+
+  castAbility(u: Unit, slot: Slot, aim: Vec): boolean {
+    const h = u.hero;
+    if (!h || u.dead || u.stunUntil > this.time || u.invulnUntil > this.time || this.winner) return false;
+    const inst = h.abilities[slot];
+    if (!inst || !inst.def.cast || inst.readyAt > this.time) return false;
+    let dx = aim.x - u.x;
+    let dy = aim.y - u.y;
+    let d = len(dx, dy);
+    if (d < 1) {
+      dx = u.facing.x;
+      dy = u.facing.y;
+      d = 1;
+    }
+    const dir = { x: dx / d, y: dy / d };
+    if (inst.def.id !== 'shadow_veil') u.stealthUntil = 0;
+    this.cooldownOverride = null;
+    const ok = inst.def.cast(this, u, { aim, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult });
+    if (ok === false) return false;
+    u.facing = dir;
+    if (inst.def.ai !== 'escape' && inst.def.ai !== 'heal') h.lastCombatAt = this.time;
+    const cd = this.cooldownOverride ?? inst.def.cooldown;
+    inst.readyAt = this.time + cd * (1 - u.stats.cdr);
+    return true;
+  }
+
+  // ------------------------------------------------------------------ deaths, xp, boons
+
+  private kill(victim: Unit, src: Unit) {
+    if (victim.dead) return;
+    victim.dead = true;
+    victim.hp = 0;
+    victim.dash = undefined;
+    const enemy = otherTeam(victim.team);
+
+    let killer: Unit | undefined = src.kind === 'hero' && src.team !== victim.team ? src : undefined;
+    if (!killer) {
+      let latest = -1;
+      for (const [id, at] of victim.damagedBy) {
+        const h = this.unit(id);
+        if (h && h.team !== victim.team && this.time - at < 10 && at > latest) {
+          latest = at;
+          killer = h;
+        }
+      }
+    }
+
+    if (victim.kind === 'hero') {
+      const vh = victim.hero!;
+      vh.deaths++;
+      vh.respawnAt = this.time + respawnTime(vh.level);
+      victim.buffs = [];
+      victim.shield = 0;
+      victim.order = { kind: 'idle' };
+      this.kills[enemy]++;
+      if (killer?.hero) {
+        killer.hero.kills++;
+        this.gainXp(killer, 110 + 28 * vh.level);
+      }
+      for (const [id, at] of victim.damagedBy) {
+        const a = this.unit(id);
+        if (a?.hero && a !== killer && a.team !== victim.team && this.time - at < 10) {
+          a.hero.assists++;
+          this.gainXp(a, 55 + 14 * vh.level);
+        }
+      }
+      victim.damagedBy.clear();
+      this.events.push({
+        type: 'kill', killer: killer?.hero?.name ?? (src.kind === 'tower' ? 'Tower' : 'Minions'), killerTeam: enemy,
+        victim: vh.name, victimTeam: victim.team, killerId: killer?.id, victimId: victim.id,
+      });
+    } else if (victim.kind === 'creep') {
+      const near = this.heroList.filter((h) => !h.dead && h.team === enemy && len(h.x - victim.x, h.y - victim.y) < 1300);
+      const share = near.length ? (victim.creep!.xp * (1 + 0.15 * (near.length - 1))) / near.length : 0;
+      for (const h of near) this.gainXp(h, share);
+    } else {
+      this.events.push({ type: 'structure', team: victim.team, kind: victim.kind });
+      for (const h of this.heroList) if (h.team === enemy) this.gainXp(h, 150);
+      if (victim.kind === 'nexus') {
+        this.winner = enemy;
+        this.events.push({ type: 'end', winner: enemy });
+      }
+    }
+  }
+
+  gainXp(u: Unit, amount: number) {
+    const h = u.hero!;
+    if (h.level >= MAX_LEVEL) return;
+    h.xp += amount;
+    while (h.level < MAX_LEVEL && h.xp >= xpToNext(h.level)) {
+      h.xp -= xpToNext(h.level);
+      h.level++;
+      const oldMax = u.stats.maxHp;
+      this.recompute(u);
+      if (!u.dead) u.hp += u.stats.maxHp - oldMax;
+      this.events.push({ type: 'levelup', unitId: u.id, level: h.level });
+      if (this.opts.boonEveryLevels > 0 && h.level % this.opts.boonEveryLevels === 0) this.offerBoon(u);
+    }
+    if (h.level >= MAX_LEVEL) h.xp = 0;
+  }
+
+  offerBoon(u: Unit) {
+    const h = u.hero!;
+    h.offers.push(rollBoonOffer(this.rng));
+    if (h.isPlayer) this.events.push({ type: 'offer', unitId: u.id });
+    else this.pickBoon(u, bestBoonIndex(h.offers[0]));
+  }
+
+  pickBoon(u: Unit, index: number) {
+    const h = u.hero!;
+    const offer = h.offers.shift();
+    if (!offer) return;
+    h.boons.push(offer[Math.max(0, Math.min(offer.length - 1, index))]);
+    this.recompute(u);
+  }
+
+  // ------------------------------------------------------------------ stats
+
+  recompute(u: Unit) {
+    const base = u.hero ? heroBaseStats(u.hero.def, u.hero.level) : u.baseStats;
+    const add = emptyStats();
+    const mul = emptyStats();
+    const apply = (m: Mods | null | undefined) => {
+      if (!m) return;
+      if (m.add) for (const k in m.add) add[k as keyof Stats] += m.add[k as keyof Stats] ?? 0;
+      if (m.mul) for (const k in m.mul) mul[k as keyof Stats] += m.mul[k as keyof Stats] ?? 0;
+    };
+    const h = u.hero;
+    if (h) {
+      const p = h.abilities.P;
+      if (p) {
+        const m = RARITIES[p.rarity].mult;
+        apply(p.def.mods?.(m));
+        apply(p.def.dynamicMods?.(u, m));
+      }
+      for (const b of h.boons) apply(b.def.mods(RARITIES[b.rarity].mult));
+    }
+    for (const b of u.buffs) apply(b);
+    const s = emptyStats();
+    for (const k of STAT_KEYS) s[k] = (base[k] + add[k]) * (1 + mul[k]);
+    s.cdr = Math.min(0.6, s.cdr);
+    s.damageReduction = Math.min(0.7, s.damageReduction);
+    s.critChance = Math.min(1, s.critChance);
+    s.moveSpeed = Math.min(650, s.moveSpeed);
+    const oldMax = u.stats.maxHp;
+    u.stats = s;
+    if (s.maxHp > oldMax && !u.dead && oldMax > 0) u.hp += s.maxHp - oldMax;
+    u.hp = Math.min(u.hp, s.maxHp);
+    if (h) u.radius = 24 * (1 + s.size);
+  }
+
+  // ------------------------------------------------------------------ main loop
+
+  update(dt: number) {
+    if (this.winner) return;
+    this.time += dt;
+    const t = this.time;
+
+    const due = this.scheduled.filter((s) => s.at <= t);
+    this.scheduled = this.scheduled.filter((s) => s.at > t);
+    for (const s of due) s.fn();
+
+    if (t >= this.nextWave) {
+      this.spawnWave();
+      this.nextWave += WAVE_INTERVAL;
+    }
+
+    for (const h of this.heroList) {
+      if (h.dead && t >= h.hero!.respawnAt) this.respawn(h);
+      if (h.hero!.level < MAX_LEVEL) this.gainXp(h, 3 * dt);
+    }
+
+    for (const u of this.units) {
+      if (u.dead) continue;
+      if (u.shieldUntil <= t) u.shield = 0;
+      if (u.buffs.length) u.buffs = u.buffs.filter((b) => b.until > t);
+      if (u.hero || u.buffs.length) this.recompute(u);
+      if (u.hp < u.stats.maxHp && u.stats.hpRegen > 0) u.hp = Math.min(u.stats.maxHp, u.hp + u.stats.hpRegen * dt);
+      if (u.hero) {
+        const p = u.hero.abilities.P;
+        p?.def.onTick?.(this, u, dt, RARITIES[p.rarity].mult);
+        const own = FOUNTAIN[u.team];
+        const foe = FOUNTAIN[otherTeam(u.team)];
+        if (len(u.x - own.x, u.y - own.y) < FOUNTAIN_RADIUS) this.heal(u, u.stats.maxHp * 0.15 * dt, true);
+        if (len(u.x - foe.x, u.y - foe.y) < FOUNTAIN_RADIUS) this.damage(this.fountainUnit(otherTeam(u.team)), u, 900 * dt, 'true');
+      }
+    }
+
+    for (const u of this.units) {
+      if (u.dead) continue;
+      if (u.hero && !u.hero.isPlayer) thinkHero(this, u);
+      else if (u.creep) thinkCreep(this, u);
+    }
+
+    for (const u of this.units) if (!u.dead) this.act(u, dt);
+    this.separate();
+    this.updateProjectiles(dt);
+    this.updateZones();
+    this.updateNovas();
+
+    if (this.units.some((u) => u.dead && !u.hero)) {
+      this.units = this.units.filter((u) => !u.dead || u.hero);
+      for (const [id, u] of this.byId) if (u.dead && !u.hero) this.byId.delete(id);
+    }
+    this.fxList = this.fxList.filter((f) => f.until > t);
+  }
+
+  private fountainUnits: Partial<Record<Team, Unit>> = {};
+  /** The nexus of a team acts as the damage source for its fountain. */
+  private fountainUnit(team: Team): Unit {
+    const cached = this.fountainUnits[team];
+    if (cached) return cached;
+    const nexus = this.units.find((u) => u.kind === 'nexus' && u.team === team)!;
+    this.fountainUnits[team] = nexus;
+    return nexus;
+  }
+
+  private respawn(u: Unit) {
+    const f = FOUNTAIN[u.team];
+    u.dead = false;
+    u.x = f.x + laneDir(u.team) * 60;
+    u.y = f.y + this.rng.range(-100, 100);
+    u.stunUntil = 0;
+    u.slowUntil = 0;
+    u.stealthUntil = 0;
+    u.invulnUntil = 0;
+    u.order = { kind: 'idle' };
+    u.hero!.retreating = false;
+    this.recompute(u);
+    u.hp = u.stats.maxHp;
+  }
+
+  private spawnWave() {
+    this.waveCount++;
+    const minutes = this.time / 60;
+    // Creeps scale up over time; past 18 minutes they ramp hard so games always end.
+    const scale = 1 + 0.045 * minutes + Math.max(0, minutes - 18) * 0.25;
+    for (const team of ['blue', 'red'] as Team[]) {
+      const x = mirrorX(team, STRUCTURE_X.nexus + 120);
+      for (let i = 0; i < 6; i++) {
+        const ranged = i >= 3;
+        const base: Stats = ranged
+          ? { ...emptyStats(), maxHp: 300 * scale, ad: 24 * scale, attackRange: 330, attackSpeed: 0.7, moveSpeed: 235 }
+          : { ...emptyStats(), maxHp: 440 * scale, ad: 15 * scale, attackRange: 45, attackSpeed: 0.8, moveSpeed: 235 };
+        const laneY = LANE_Y + (i % 3 - 1) * 70;
+        const c = this.makeUnit('creep', team, x - laneDir(team) * (ranged ? 90 : 0), laneY, ranged ? 15 : 17, base);
+        c.creep = { ranged, xp: ranged ? 45 : 55, nextThink: 0, laneY };
+      }
+    }
+  }
+
+  private moveToward(u: Unit, x: number, y: number, dt: number) {
+    const dx = x - u.x;
+    const dy = y - u.y;
+    const d = len(dx, dy);
+    if (d < 2) return true;
+    const speed = u.stats.moveSpeed * (u.slowUntil > this.time ? 1 - u.slowPct : 1);
+    const step = Math.min(d, speed * dt);
+    u.facing = { x: dx / d, y: dy / d };
+    this.moveUnit(u, u.x + (dx / d) * step, u.y + (dy / d) * step);
+    return step >= d;
+  }
+
+  private act(u: Unit, dt: number) {
+    const t = this.time;
+    u.attackCd -= dt;
+    if (u.kind === 'nexus') return;
+    if (u.kind === 'tower') return this.towerAct(u);
+    if (u.stunUntil > t || u.invulnUntil > t) return;
+
+    if (u.dash) {
+      const d = u.dash;
+      this.moveUnit(u, u.x + d.vx * dt, u.y + d.vy * dt);
+      if (d.damage > 0 || d.stun > 0) {
+        for (const e of this.enemiesNear(u.team, u.x, u.y, d.radius + u.radius)) {
+          if (d.hit.has(e.id)) continue;
+          d.hit.add(e.id);
+          if (d.damage) this.damage(u, e, d.damage, 'spell');
+          if (d.stun) this.stun(e, d.stun);
+        }
+      }
+      if (t >= d.until) {
+        u.dash = undefined;
+        d.onEnd?.();
+      }
+      return;
+    }
+
+    const h = u.hero;
+    if (h?.moveDir) {
+      this.moveToward(u, u.x + h.moveDir.x * 100, u.y + h.moveDir.y * 100, dt);
+      return;
+    }
+
+    const o = u.order;
+    if (o.kind === 'move') {
+      if (this.moveToward(u, o.x, o.y, dt)) u.order = { kind: 'idle' };
+      return;
+    }
+    if (o.kind === 'attack') {
+      const target = this.unit(o.id);
+      if (!target || !this.attackable(u, target)) {
+        u.order = { kind: 'idle' };
+        return;
+      }
+      if (this.inAttackRange(u, target)) {
+        if (u.attackCd <= 0) this.performAttack(u, target);
+      } else {
+        this.moveToward(u, target.x, target.y, dt);
+      }
+      return;
+    }
+    // Idle player heroes auto-attack whatever is in range, preferring heroes.
+    if (h?.isPlayer && u.attackCd <= 0) {
+      let best: Unit | undefined;
+      let bestScore = Infinity;
+      for (const e of this.units) {
+        if (!this.attackable(u, e) || !this.inAttackRange(u, e)) continue;
+        const score = len(e.x - u.x, e.y - u.y) - (e.kind === 'hero' ? 200 : 0);
+        if (score < bestScore) {
+          bestScore = score;
+          best = e;
+        }
+      }
+      if (best) this.performAttack(u, best);
+    }
+  }
+
+  private towerAct(u: Unit) {
+    if (u.attackCd > 0) return;
+    const range = u.stats.attackRange;
+    const inRange = this.units.filter((e) => this.attackable(u, e) && e.kind !== 'tower' && e.kind !== 'nexus' && len(e.x - u.x, e.y - u.y) <= range + e.radius);
+    if (!inRange.length) {
+      u.structure!.consecutive = 0;
+      return;
+    }
+    const aggressor = inRange.find((e) => e.kind === 'hero' && this.time - e.lastHitHeroAt < 2);
+    const current = inRange.find((e) => e.id === u.structure!.targetId);
+    const byDist = (a: Unit, b: Unit) => len(a.x - u.x, a.y - u.y) - len(b.x - u.x, b.y - u.y);
+    const creep = inRange.filter((e) => e.kind === 'creep').sort(byDist)[0];
+    const target = aggressor ?? current ?? creep ?? inRange.sort(byDist)[0];
+    this.performAttack(u, target);
+  }
+
+  private separate() {
+    const mobile = this.units.filter((u) => !u.dead && (u.kind === 'hero' || u.kind === 'creep') && !u.dash);
+    const statics = this.units.filter((u) => !u.dead && (u.kind === 'tower' || u.kind === 'nexus'));
+    for (let i = 0; i < mobile.length; i++) {
+      const a = mobile[i];
+      for (let j = i + 1; j < mobile.length; j++) {
+        const b = mobile[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const min = (a.radius + b.radius) * 0.85;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= min * min) continue;
+        const d = Math.sqrt(d2) || 0.01;
+        const push = (min - d) / 2;
+        const nx = d2 ? dx / d : 1;
+        const ny = d2 ? dy / d : 0;
+        this.moveUnit(a, a.x - nx * push, a.y - ny * push);
+        this.moveUnit(b, b.x + nx * push, b.y + ny * push);
+      }
+      for (const s of statics) {
+        const dx = a.x - s.x;
+        const dy = a.y - s.y;
+        const min = a.radius + s.radius;
+        const d = len(dx, dy);
+        if (d >= min) continue;
+        const nx = d ? dx / d : 0;
+        const ny = d ? dy / d : 1;
+        this.moveUnit(a, s.x + nx * min, s.y + ny * min);
+      }
+    }
+  }
+
+  private updateProjectiles(dt: number) {
+    const keep: Projectile[] = [];
+    for (const p of this.projectiles) {
+      if (p.targetId !== undefined) {
+        const t = this.unit(p.targetId);
+        if (!t || t.dead) continue;
+        const dx = t.x - p.x;
+        const dy = t.y - p.y;
+        const d = len(dx, dy);
+        const step = p.speed * dt;
+        if (d <= step + t.radius) {
+          p.onHit(t);
+          continue;
+        }
+        p.vx = (dx / d) * p.speed;
+        p.vy = (dy / d) * p.speed;
+        p.x += (dx / d) * step;
+        p.y += (dy / d) * step;
+        keep.push(p);
+        continue;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.traveled += p.speed * dt;
+      let alive = true;
+      for (const e of this.enemiesNear(p.team, p.x, p.y, p.radius)) {
+        if (p.hit.has(e.id)) continue;
+        p.hit.add(e.id);
+        p.onHit(e);
+        if (!p.pierce) {
+          alive = false;
+          break;
+        }
+      }
+      if (alive && p.traveled < p.range && p.y > 40 && p.y < 1060) keep.push(p);
+    }
+    this.projectiles = keep;
+  }
+
+  private updateZones() {
+    const t = this.time;
+    this.zones = this.zones.filter((z) => z.until > t && !(z.follow && z.owner.dead));
+    for (const z of this.zones) {
+      if (z.follow) {
+        z.x = z.owner.x;
+        z.y = z.owner.y;
+      }
+      if (t < z.nextTick) continue;
+      z.nextTick = t + 0.25;
+      for (const e of this.enemiesNear(z.team, z.x, z.y, z.radius)) {
+        if (z.dps) this.damage(z.owner, e, z.dps * 0.25, 'spell');
+        if (z.slowPct) this.slow(e, z.slowPct, 0.4);
+        if (z.pull && !e.dead) {
+          const dx = z.x - e.x;
+          const dy = z.y - e.y;
+          const d = len(dx, dy);
+          if (d > 20) this.moveUnit(e, e.x + (dx / d) * Math.min(d, z.pull * 0.25), e.y + (dy / d) * Math.min(d, z.pull * 0.25));
+        }
+      }
+    }
+  }
+
+  private updateNovas() {
+    const t = this.time;
+    const due = this.novas.filter((n) => n.at <= t);
+    this.novas = this.novas.filter((n) => n.at > t);
+    for (const n of due) {
+      this.fx({ kind: 'burst', x: n.x, y: n.y, r: n.radius, color: n.color, duration: 0.35 });
+      for (const e of this.enemiesNear(n.team, n.x, n.y, n.radius)) n.onHit(e);
+    }
+  }
+}

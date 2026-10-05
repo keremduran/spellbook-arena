@@ -1,0 +1,204 @@
+import { autoAim } from '../game/aim';
+import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
+import { RARITIES, SLOTS, type GameEvent, type Slot, type Unit } from '../sim/types';
+import type { World } from '../sim/world';
+import { clear, el } from './dom';
+
+const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+export class Hud {
+  root: HTMLElement;
+  private kBlue = el('span.k-blue', { text: '0' });
+  private kRed = el('span.k-red', { text: '0' });
+  private clock = el('span.clock', { text: '0:00' });
+  private feed = el('div.feed');
+  private minimap = el('canvas.minimap', { width: 480, height: 126 }) as HTMLCanvasElement;
+  private hpFill = el('i');
+  private hpText = el('span');
+  private xpFill = el('i');
+  private lvl = el('span.lvl');
+  private statline = el('div.statline');
+  private slots = {} as Record<Slot, { btn: HTMLElement; cd: HTMLElement }>;
+  private boons = el('div.boons.hidden');
+  private death = el('div.death.hidden');
+  private scoreboard = el('div.scoreboard.hidden');
+  private acc = 1;
+  private offerShown = -1;
+
+  constructor(parent: HTMLElement, private world: World, private player: Unit, onPause: () => void) {
+    const h = player.hero!;
+    const slotEls = SLOTS.map((slot) => {
+      const inst = h.abilities[slot];
+      const cd = el('div.cd.hidden');
+      const btn = el(`button.slot${slot === 'P' ? '.passive' : ''}`, {
+        style: `--rc:${inst ? RARITIES[inst.rarity].color : '#555'}`,
+        title: inst ? `${inst.def.name} (${RARITIES[inst.rarity].label})\n${inst.def.desc(world.power(player, inst.rarity), RARITIES[inst.rarity].mult)}` : '',
+        onpointerdown: (e: Event) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (slot !== 'P' && inst) this.world.castAbility(player, slot, autoAim(world, player, inst.def));
+        },
+      }, [el('span.key', { text: slot }), inst?.def.icon ?? '', cd]);
+      this.slots[slot] = { btn, cd };
+      return btn;
+    });
+
+    this.root = el('div.hud', {}, [
+      el('div.topbar', {}, [this.kBlue, this.clock, this.kRed]),
+      el('div.topbtns', {}, [
+        el('button.iconbtn', { title: 'Scoreboard', onclick: () => this.scoreboard.classList.toggle('hidden') }, ['📊']),
+        el('button.iconbtn', { title: 'Pause', onclick: () => onPause() }, ['⏸']),
+      ]),
+      this.feed,
+      this.minimap,
+      this.boons,
+      this.death,
+      this.scoreboard,
+      el('div.bottom', {}, [
+        el('div.me', {}, [
+          el('div.face', { style: `--hc:${h.def.color}` }, [h.def.icon, this.lvl]),
+          el('div.bars', {}, [
+            el('div.bar', {}, [this.hpFill, this.hpText]),
+            el('div.bar.xp', {}, [this.xpFill]),
+            this.statline,
+          ]),
+        ]),
+        el('div.slots', {}, slotEls),
+      ]),
+    ]);
+    parent.append(this.root);
+  }
+
+  destroy() {
+    this.root.remove();
+  }
+
+  onEvents(events: GameEvent[]) {
+    for (const e of events) {
+      if (e.type === 'kill') {
+        const line = el('div', {}, [
+          el(`span.${e.killerTeam}`, { text: e.killer ?? '?' }),
+          ' ⚔ ',
+          el(`span.${e.victimTeam}`, { text: e.victim }),
+        ]);
+        this.feed.prepend(line);
+        while (this.feed.children.length > 5) this.feed.lastChild?.remove();
+        setTimeout(() => line.remove(), 6000);
+      } else if (e.type === 'structure') {
+        const line = el('div', {}, [el(`span.${e.team}`, { text: e.team === this.player.team ? 'Your' : 'Enemy' }), ` ${e.kind} destroyed!`]);
+        this.feed.prepend(line);
+        setTimeout(() => line.remove(), 6000);
+      }
+    }
+  }
+
+  pickBoon(index: number) {
+    if (!this.player.hero!.offers.length) return;
+    this.world.pickBoon(this.player, index);
+    this.offerShown = -1;
+    this.renderBoons();
+  }
+
+  showScoreboard(show: boolean) {
+    this.scoreboard.classList.toggle('hidden', !show);
+    if (show) this.renderScoreboard();
+  }
+
+  /** Called every frame; refreshes the DOM about 10 times a second. */
+  update(dt: number) {
+    this.acc += dt;
+    if (this.acc < 0.1) return;
+    this.acc = 0;
+    const w = this.world;
+    const u = this.player;
+    const h = u.hero!;
+    this.kBlue.textContent = String(w.kills.blue);
+    this.kRed.textContent = String(w.kills.red);
+    this.clock.textContent = fmtTime(w.time);
+    this.hpFill.style.width = `${(u.hp / u.stats.maxHp) * 100}%`;
+    this.hpText.textContent = `${Math.min(Math.ceil(u.hp), Math.round(u.stats.maxHp))} / ${Math.round(u.stats.maxHp)}${u.shield > 0 ? ` (+${Math.round(u.shield)})` : ''}`;
+    this.xpFill.style.width = h.level >= 18 ? '100%' : `${(h.xp / xpToNext(h.level)) * 100}%`;
+    this.lvl.textContent = String(h.level);
+    const s = u.stats;
+    this.statline.textContent = `⚔ ${Math.round(s.ad)}  ⚡ ${s.attackSpeed.toFixed(2)}  👟 ${Math.round(s.moveSpeed)}  🔮 ${Math.round(s.spellPower * 100)}%  ⏱ ${Math.round(s.cdr * 100)}%`;
+
+    for (const slot of SLOTS) {
+      const inst = h.abilities[slot];
+      const { cd } = this.slots[slot];
+      const left = inst ? inst.readyAt - w.time : 0;
+      cd.classList.toggle('hidden', !(left > 0) && !u.dead);
+      cd.textContent = u.dead ? '' : left > 0 ? (left < 1 ? left.toFixed(1) : String(Math.ceil(left))) : '';
+    }
+
+    this.death.classList.toggle('hidden', !u.dead);
+    if (u.dead) {
+      clear(this.death);
+      this.death.append(el('b', { text: 'Slain' }), el('span', { text: `Respawning in ${Math.ceil(h.respawnAt - w.time)}s` }));
+    }
+    if (this.offerShown !== h.offers.length) this.renderBoons();
+    if (!this.scoreboard.classList.contains('hidden')) this.renderScoreboard();
+    this.drawMinimap();
+  }
+
+  private renderBoons() {
+    const h = this.player.hero!;
+    this.offerShown = h.offers.length;
+    clear(this.boons);
+    const offer = h.offers[0];
+    this.boons.classList.toggle('hidden', !offer);
+    if (!offer) return;
+    this.boons.append(
+      el('h3', {}, ['Choose a boon', el('small', { text: h.offers.length > 1 ? `+${h.offers.length - 1} more waiting` : 'Keys 1 · 2 · 3' })]),
+      el('div.boon-row', {}, offer.map((b, i) => {
+        const r = RARITIES[b.rarity];
+        return el('button.boon', { style: `--rc:${r.color}`, onclick: () => this.pickBoon(i) }, [
+          el('span.bi', { text: b.def.icon }),
+          el('div', {}, [el('b', { text: b.def.name }), el('span.rar', { text: r.label }), el('p', { text: b.def.desc(r.mult) })]),
+          el('kbd.hk', { text: String(i + 1) }),
+        ]);
+      })),
+    );
+  }
+
+  private renderScoreboard() {
+    clear(this.scoreboard);
+    const rows = [...this.world.heroList].sort((a, b) => (a.team === b.team ? 0 : a.team === 'blue' ? -1 : 1)).map((u) => {
+      const h = u.hero!;
+      const ab = SLOTS.map((s) => h.abilities[s]?.def.icon ?? '·').join('');
+      const boons = h.boons.map((b) => b.def.icon).join('');
+      return el(`tr.${u.team}${h.isPlayer ? '.you' : ''}`, {}, [
+        el('td', { text: `${h.def.icon} ${h.name}` }),
+        el('td', { text: String(h.level) }),
+        el('td', { text: `${h.kills} / ${h.deaths} / ${h.assists}` }),
+        el('td.ab', { text: ab }),
+        el('td.ab', { text: boons || '—' }),
+      ]);
+    });
+    this.scoreboard.append(el('table', {}, [
+      el('tr', {}, ['Hero', 'Lvl', 'K / D / A', 'P Q W E R', 'Boons'].map((t) => el('th', { text: t }))),
+      ...rows,
+    ]));
+  }
+
+  private drawMinimap() {
+    const c = this.minimap.getContext('2d');
+    if (!c) return;
+    const sx = this.minimap.width / MAP_W;
+    const sy = this.minimap.height / MAP_H;
+    c.fillStyle = '#0c140f';
+    c.fillRect(0, 0, this.minimap.width, this.minimap.height);
+    c.fillStyle = '#223828';
+    c.fillRect(0, 360 * sy, this.minimap.width, 380 * sy);
+    for (const u of this.world.units) {
+      if (u.dead) continue;
+      if (u.team !== this.player.team && !this.world.isVisible(u, this.player.team)) continue;
+      const col = u.team === 'blue' ? '#4fa3ff' : '#ff5a5a';
+      const r = u.kind === 'hero' ? 6 : u.kind === 'creep' ? 2.5 : 7;
+      c.fillStyle = u === this.player ? '#ffe082' : col;
+      c.beginPath();
+      if (u.kind === 'tower' || u.kind === 'nexus') c.rect(u.x * sx - r, u.y * sy - r, r * 2, r * 2);
+      else c.arc(u.x * sx, u.y * sy, r, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+}

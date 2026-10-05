@@ -482,3 +482,25 @@ body.touch .hud:not(.manager) .feed { top: auto; right: auto; left: 50%; transfo
 .boon .after { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; padding-top: 4px; border-top: 1px dashed rgba(255, 255, 255, 0.15); }
 .boon .after span { font-size: 10.5px; color: #a5d6a7; font-weight: 600; font-variant-numeric: tabular-nums; }
 @media (max-height: 520px) { .boon .after span { font-size: 9px; } body.touch .boon .after span:nth-child(n+3) { display: none; } }
+
+/* ---------------------------------------------------------------- damage meters */
+
+.meter { min-width: 86px; white-space: nowrap; }
+.meter .mnum { display: inline-block; width: 38px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.meter .mbar { display: inline-block; width: 44px; height: 6px; border-radius: 3px; background: #0a0e12; vertical-align: middle; overflow: hidden; }
+.meter .mbar i { display: block; height: 100%; }
+.meter.dealt .mbar i { background: linear-gradient(90deg, #ff8a65, #ffca28); }
+.meter.taken .mbar i { background: linear-gradient(90deg, #64b5f6, #b0bec5); }
+.dmgtable { max-height: 42vh; overflow: auto; margin: 0 auto 16px; width: fit-content; max-width: 100%; text-align: left; font-size: 13px; }
+.dmgtable table { border-collapse: collapse; }
+.dmgtable td, .dmgtable th { padding: 4px 10px; }
+.dmgtable th { color: var(--muted); font-weight: 600; }
+.dmgtable tr.blue td:first-child { border-left: 3px solid var(--blue); }
+.dmgtable tr.red td:first-child { border-left: 3px solid var(--red); }
+.dmgtable tr.you td { color: #ffe082; font-weight: 700; }
+@media (max-height: 520px) {
+  .meter { min-width: 64px; }
+  .meter .mnum { width: 30px; }
+  .meter .mbar { width: 28px; }
+  .dmgtable { font-size: 11px; max-height: 38vh; }
+}

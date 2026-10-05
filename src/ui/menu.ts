@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.7 · tank boosts halved';
+export const VERSION = 'v3.8 · damage meters';
 
 export interface Settings {
   mode: 'play' | 'manage';

@@ -4,7 +4,7 @@ import { DIRECTIVES, RARITIES, SLOTS, type Directive, type GameEvent, type Team,
 import type { World } from '../sim/world';
 import { clear, el } from './dom';
 import { bestBoonIndex } from '../sim/boons';
-import { bannerEvents, boonCards, drawMinimap, portrait, pushFeed, soundButtons } from './hud';
+import { bannerEvents, boonCards, drawMinimap, fmtDmg, portrait, pushFeed, soundButtons } from './hud';
 
 const DIRECTIVE_LABEL: Record<Directive, string> = { auto: 'Auto', push: 'Push', farm: 'Farm', group: 'Group', retreat: 'Retreat' };
 const DIRECTIVE_ICON: Record<Directive, string> = { auto: '🤖', push: '⏩', farm: '🌾', group: '🫂', retreat: '🏃' };
@@ -230,7 +230,7 @@ export class ManagerHud {
     live.hp.style.width = `${(u.hp / s.maxHp) * 100}%`;
     live.hpText.textContent = u.dead ? `Respawning in ${Math.ceil(h.respawnAt - w.time)}s` : `${Math.min(Math.ceil(u.hp), Math.round(s.maxHp))} / ${Math.round(s.maxHp)}`;
     live.xp.style.width = `${h.level >= MAX_LEVEL ? 100 : (h.xp / xpToNext(h.level)) * 100}%`;
-    live.stat.textContent = `⚔ ${Math.round(s.ad)}  ⚡ ${s.attackSpeed.toFixed(2)}  👟 ${Math.round(s.moveSpeed)}  🔮 ${Math.round(s.spellPower * 100)}%`;
+    live.stat.textContent = `⚔ ${Math.round(s.ad)}  ⚡ ${s.attackSpeed.toFixed(2)}  👟 ${Math.round(s.moveSpeed)}  🔮 ${Math.round(s.spellPower * 100)}%  ·  dealt ${fmtDmg(h.dmgDealt)}  taken ${fmtDmg(h.dmgTaken)}`;
     for (const slot of SLOTS) {
       const cd = live.cds[slot];
       if (!cd) continue;

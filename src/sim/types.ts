@@ -111,6 +111,9 @@ export interface HeroState {
   secondWindUsed: boolean;
   nextThunder: number;
   nextStatic: number;
+  /** Damage dealt to enemy heroes, and damage taken from any source (after damage reduction, shields included). */
+  dmgDealt: number;
+  dmgTaken: number;
   /** Kills since last death, and multi-kill tracking. */
   streak: number;
   multi: number;

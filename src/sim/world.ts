@@ -119,7 +119,7 @@ export class World {
       def: setup.def, name: setup.name, isPlayer: !!setup.isPlayer, managed: !!setup.managed, directive: 'auto', level: 1, xp: 0, kills: 0, deaths: 0, assists: 0,
       respawnAt: 0, abilities, boons: [], offers: [], attackCount: 0, lastCombatAt: -99, moveDir: null,
       retreating: false, nextThink: 0, laneOffset: this.rng.range(-170, 170),
-      effects: {}, secondWindUsed: false, nextThunder: 0, nextStatic: 0, streak: 0, multi: 0, multiAt: -99,
+      effects: {}, secondWindUsed: false, nextThunder: 0, nextStatic: 0, streak: 0, multi: 0, multiAt: -99, dmgDealt: 0, dmgTaken: 0,
     };
     if (setup.isPlayer) this.playerTeam = setup.team;
     this.recompute(u);
@@ -373,6 +373,10 @@ export class World {
     }
     if (this.playerTeam && src.hero && !src.hero.isPlayer && src.team !== this.playerTeam) amount *= this.difficulty().damage;
     amount *= 1 - tgt.stats.damageReduction;
+    // Damage meters count what landed, including what shields soaked up.
+    const landed = Math.min(amount, tgt.hp + tgt.shield);
+    if (tgt.hero) tgt.hero.dmgTaken += landed;
+    if (src.hero && tgt.hero && src.team !== tgt.team) src.hero.dmgDealt += landed;
     if (tgt.shield > 0) {
       const absorbed = Math.min(tgt.shield, amount);
       tgt.shield -= absorbed;

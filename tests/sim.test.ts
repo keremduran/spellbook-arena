@@ -361,3 +361,18 @@ describe('tank mechanics and stacking', () => {
     expect(w.winner === 'blue' || (nexus && nexus.hp < nexus.stats.maxHp)).toBe(true);
   });
 });
+
+describe('damage meters', () => {
+  it('counts damage dealt to enemy heroes and damage taken from anything', () => {
+    const w = new World({ boonEveryLevels: 0, seed: 51 });
+    const me = w.addHero({ def: HEROES[0], team: 'blue', name: 'me', isPlayer: true, picks: {} });
+    const foe = w.addHero({ def: HEROES[1], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    w.damage(me, foe, 100, 'true');
+    w.shield(foe, 50, 5);
+    w.damage(me, foe, 80, 'true'); // shield soaks 50, still counts as damage landed
+    const tower = w.units.find((u) => u.kind === 'tower' && u.team === 'blue')!;
+    w.damage(tower, foe, 40, 'true');
+    expect(me.hero!.dmgDealt).toBe(180);
+    expect(foe.hero!.dmgTaken).toBe(220);
+  });
+});

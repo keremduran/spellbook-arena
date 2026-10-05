@@ -9,7 +9,7 @@ import { World } from './sim/world';
 import { sfx } from './game/audio';
 import { el } from './ui/dom';
 import { showDraft } from './ui/draftScreen';
-import { Hud } from './ui/hud';
+import { Hud, damageTable } from './ui/hud';
 import { ManagerHud } from './ui/managerHud';
 import { renderMenu, type Settings } from './ui/menu';
 import { createJoystick, isTouchDevice } from './ui/touch';
@@ -75,6 +75,7 @@ function startManager(settings: Settings) {
           el('div.endbox.panel', {}, [
             el(`h1.title.${e.winner === 'blue' ? 'win' : 'lose'}`, { text: `${e.winner === 'blue' ? 'Blue' : 'Red'} wins` }),
             el('p.summary', { text: `${Math.floor(world.time / 60)} min · kills ${world.kills.blue} – ${world.kills.red}` }),
+            damageTable(world, null),
             el('button.btn-primary', { onclick: quit }, ['Back to menu']),
           ]),
         ]);
@@ -182,6 +183,7 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
         el(`h1.title.${won ? 'win' : 'lose'}`, { text: won ? 'Victory' : 'Defeat' }),
         el('p.summary', { text: `${Math.floor(w.time / 60)} min · ${h.def.name} level ${h.level} · ${h.kills} / ${h.deaths} / ${h.assists}` }),
         el('div.build', {}, build),
+        damageTable(w, me),
         el('button.btn-primary', { onclick: () => { box.remove(); teardown(); menu(); } }, ['Play again']),
       ]),
     ]);

@@ -235,7 +235,10 @@ export class Hud {
       this.death.append(el('b', { text: 'Slain' }), el('span', { text: `Respawning in ${Math.ceil(h.respawnAt - w.time)}s` }));
     }
     if (this.offerShown !== h.offers.length) this.renderBoons();
-    if (!this.scoreboard.classList.contains('hidden')) this.renderScoreboard();
+    if (!this.scoreboard.classList.contains('hidden')) {
+      this.renderScoreboard();
+      this.updateMeters();
+    }
     this.drawMinimap();
   }
 
@@ -283,18 +286,39 @@ export class Hud {
         extra > 0 ? el('button.more', { 'data-id': String(u.id) }, [`+${extra} more`]) : null,
         open && h.boons.length > 5 ? el('button.more', { 'data-id': String(u.id) }, ['less']) : null,
       ]);
+      const dealt = meter('dealt');
+      const taken = meter('taken');
+      this.meters.set(u.id, { dealt, taken });
       return el(`tr.${u.team}${h.isPlayer ? '.you' : ''}`, {}, [
         el('td', {}, [heroImg(h.def, 'inline'), ` ${h.name}`]),
         el('td', { text: String(h.level) }),
         el('td.kda', { text: `${h.kills} / ${h.deaths} / ${h.assists}` }),
+        dealt.cell,
+        taken.cell,
         el('td.ab', { text: ab }),
         boonCell,
       ]);
     });
     this.scoreTable.append(el('table', {}, [
-      el('tr', {}, ['Hero', 'Lvl', 'K / D / A', 'P Q W E R', 'Boons'].map((t) => el('th', { text: t }))),
+      el('tr', {}, [['Hero'], ['Lvl'], ['K / D / A'], ['Dealt', 'Damage dealt to enemy heroes'], ['Taken', 'Damage taken from heroes, towers and minions'], ['P Q W E R'], ['Boons']].map(([t, title]) => el('th', { text: t, title }))),
       ...rows,
     ]));
+    this.updateMeters();
+  }
+
+  private meters = new Map<number, { dealt: Meter; taken: Meter }>();
+
+  /** Damage numbers change constantly, so they update in place without rebuilding the table. */
+  private updateMeters() {
+    const heroes = this.world.heroList;
+    const maxDealt = Math.max(1, ...heroes.map((u) => u.hero!.dmgDealt));
+    const maxTaken = Math.max(1, ...heroes.map((u) => u.hero!.dmgTaken));
+    for (const u of heroes) {
+      const m = this.meters.get(u.id);
+      if (!m) continue;
+      setMeter(m.dealt, u.hero!.dmgDealt, maxDealt);
+      setMeter(m.taken, u.hero!.dmgTaken, maxTaken);
+    }
   }
 
   private drawMinimap() {
@@ -408,4 +432,47 @@ export function soundButtons() {
     musicBtn.classList.toggle('off', !sfx.musicOn);
   });
   return [sfxBtn, musicBtn];
+}
+
+/** A damage meter cell: number plus a bar scaled to the top value in the match. */
+export interface Meter {
+  cell: HTMLElement;
+  num: HTMLElement;
+  bar: HTMLElement;
+}
+
+export const fmtDmg = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : String(Math.round(v)));
+
+export function meter(kind: 'dealt' | 'taken'): Meter {
+  const num = el('span.mnum');
+  const bar = el('i');
+  return { cell: el(`td.meter.${kind}`, {}, [num, el('span.mbar', {}, [bar])]), num, bar };
+}
+
+export function setMeter(m: Meter, value: number, max: number) {
+  m.num.textContent = fmtDmg(value);
+  m.bar.style.width = `${(value / max) * 100}%`;
+}
+
+/** End-of-match damage breakdown for every hero, biggest damage dealers first. */
+export function damageTable(world: World, me: Unit | null) {
+  const heroes = [...world.heroList].sort((a, b) => b.hero!.dmgDealt - a.hero!.dmgDealt);
+  const maxDealt = Math.max(1, ...heroes.map((u) => u.hero!.dmgDealt));
+  const maxTaken = Math.max(1, ...heroes.map((u) => u.hero!.dmgTaken));
+  const rows = heroes.map((u) => {
+    const h = u.hero!;
+    const dealt = meter('dealt');
+    const taken = meter('taken');
+    setMeter(dealt, h.dmgDealt, maxDealt);
+    setMeter(taken, h.dmgTaken, maxTaken);
+    return el(`tr.${u.team}${u === me ? '.you' : ''}`, {}, [
+      el('td', {}, [heroImg(h.def, 'inline'), ` ${h.name}`]),
+      el('td.kda', { text: `${h.kills} / ${h.deaths} / ${h.assists}` }),
+      dealt.cell,
+      taken.cell,
+    ]);
+  });
+  return el('div.dmgtable', {}, [
+    el('table', {}, [el('tr', {}, ['Hero', 'K / D / A', 'Damage dealt', 'Damage taken'].map((t) => el('th', { text: t }))), ...rows]),
+  ]);
 }

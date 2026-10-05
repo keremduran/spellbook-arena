@@ -6,7 +6,7 @@
 export type SfxName =
   | 'swing' | 'shoot' | 'towerShot' | 'hit' | 'crit'
   | 'bolt' | 'zap' | 'boom' | 'bigBoom' | 'whoosh' | 'blink' | 'heal' | 'shield' | 'buff' | 'stun' | 'ult'
-  | 'death' | 'kill' | 'allyDown' | 'levelUp' | 'boon' | 'structure' | 'click' | 'victory' | 'defeat';
+  | 'death' | 'kill' | 'allyDown' | 'levelUp' | 'boon' | 'structure' | 'click' | 'victory' | 'defeat' | 'announce' | 'rune';
 
 const PREFS_KEY = 'spellbook-audio';
 
@@ -218,6 +218,15 @@ export class Sfx {
       case 'structure':
         this.play('bigBoom', gain);
         [196, 147, 98].forEach((f, i) => this.tone(f, 0.5, { type: 'sawtooth', vol: 0.08, delay: 0.2 + i * 0.18 }));
+        break;
+      case 'announce':
+        this.tone(196, 0.5, { type: 'sawtooth', vol: 0.1 });
+        [392, 494, 587, 784].forEach((f, i) => this.tone(f, i === 3 ? 0.6 : 0.16, { type: 'square', vol: 0.09, delay: 0.05 + i * 0.09 }));
+        this.hiss(0.5, { filter: 'highpass', freq: 4000, vol: 0.08, delay: 0.3 });
+        break;
+      case 'rune':
+        [523, 784, 1047, 1319, 1568].forEach((f, i) => this.tone(f, 0.5, { type: 'sine', vol: 0.09, delay: i * 0.04, attack: 0.02 }));
+        this.tone(130, 0.7, { type: 'triangle', to: 260, vol: 0.15 });
         break;
       case 'click':
         this.tone(1200, 0.04, { type: 'square', vol: 0.05 });

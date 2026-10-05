@@ -1,5 +1,5 @@
 import type { AbilityDef } from './abilities';
-import type { BoonDef } from './boons';
+import type { BoonDef, EffectId } from './boons';
 import type { HeroDef } from './heroes';
 
 export type Team = 'blue' | 'red';
@@ -101,6 +101,15 @@ export interface HeroState {
   offers: BoonInst[][];
   attackCount: number;
   lastCombatAt: number;
+  /** Summed rarity multiplier per effect boon owned. */
+  effects: Partial<Record<EffectId, number>>;
+  secondWindUsed: boolean;
+  nextThunder: number;
+  nextStatic: number;
+  /** Kills since last death, and multi-kill tracking. */
+  streak: number;
+  multi: number;
+  multiAt: number;
   /** Joystick direction for touch controls; overrides orders while set. */
   moveDir: Vec | null;
   retreating: boolean;
@@ -148,6 +157,9 @@ export interface Unit {
   /** Last time this unit hit an enemy hero (tower aggro). */
   lastHitHeroAt: number;
   dash?: Dash;
+  /** Damage over time (Burning Blade). */
+  dots: { src: Unit; dps: number; until: number }[];
+  nextDot: number;
   hero?: HeroState;
   creep?: { ranged: boolean; xp: number; nextThink: number; laneY: number };
   structure?: { protectedBy?: number; consecutive: number; targetId?: number };
@@ -224,4 +236,7 @@ export type GameEvent =
   | { type: 'cast'; unitId: number; abilityId: string; kind: 'basic' | 'ult' | 'passive'; tags: string[]; color: string; x: number; y: number }
   | { type: 'attack'; unitId: number; x: number; y: number; tx: number; ty: number; ranged: boolean; tower: boolean }
   | { type: 'die'; unitId: number; kind: UnitKind; team: Team; x: number; y: number; r: number }
-  | { type: 'boom'; x: number; y: number; r: number; color: string };
+  | { type: 'boom'; x: number; y: number; r: number; color: string }
+  | { type: 'rune'; unitId: number; x: number; y: number }
+  | { type: 'runeSpawn'; x: number; y: number }
+  | { type: 'announce'; text: string; sub: string; team: Team; unitId: number };

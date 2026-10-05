@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v2 · graphics & sound';
+export const VERSION = 'v3 · effect boons, power rune, faster matches';
 
 export interface Settings {
   mode: 'play' | 'manage';
@@ -9,12 +9,13 @@ export interface Settings {
   teamSize: number;
   boonEveryLevels: number;
   name: string;
+  difficulty: 'easy' | 'normal' | 'hard';
 }
 
-const KEY = 'spellbook-settings-v2';
+const KEY = 'spellbook-settings-v3';
 
 export function loadSettings(): Settings {
-  const fallback: Settings = { mode: 'play', manageTeams: 'blue', teamSize: 5, boonEveryLevels: 3, name: 'You' };
+  const fallback: Settings = { mode: 'play', manageTeams: 'blue', teamSize: 5, boonEveryLevels: 3, name: 'You', difficulty: 'normal' };
   try {
     return { ...fallback, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
   } catch {
@@ -52,9 +53,14 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
     seg<Settings['manageTeams']>([['blue', 'Blue bots'], ['both', 'Every bot']], s.manageTeams, (v) => (s.manageTeams = v)),
   ]);
   const nameRow = el('div.setting', {}, [el('label', { text: 'Your name' }), name]);
+  const diffRow = el('div.setting', {}, [
+    el('label', { text: 'Enemy bots' }),
+    seg<Settings['difficulty']>([['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']], s.difficulty, (v) => (s.difficulty = v)),
+  ]);
   const syncMode = () => {
     manageRow.classList.toggle('hidden', s.mode !== 'manage');
     nameRow.classList.toggle('hidden', s.mode !== 'play');
+    diffRow.classList.toggle('hidden', s.mode !== 'play');
   };
   const screen: HTMLElement = el('div.screen', {}, [
     el('div.menu', {}, [
@@ -68,6 +74,7 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
         ]),
         manageRow,
         nameRow,
+        diffRow,
         el('div.setting', {}, [
           el('label', { text: 'Team size' }),
           seg<number>([[1, '1v1'], [3, '3v3'], [5, '5v5']], s.teamSize, (v) => (s.teamSize = v)),
@@ -90,6 +97,7 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
         el('div', { html: '<b>Desktop:</b> click to move / attack (hold to keep moving), <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> cast towards the mouse, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick boons, <kbd>S</kbd> stop, hold <kbd>Tab</kbd> for the scoreboard, <kbd>Esc</kbd> pause.' }),
         el('div', { html: '<b>Mobile:</b> joystick or tap to move, ability buttons auto-aim at the nearest enemy. Play in landscape.' }),
         el('div', { html: '<b>Watch &amp; manage:</b> all 10 heroes are bots. Click a bot (or its row) to follow it and give it orders: Push, Farm, Group, Retreat, or focus an enemy. Team buttons order everyone at once. You choose the boons for the bots you manage: tabs (or <kbd>N</kbd>) switch between bots that are waiting, and “Let bot pick” hands one back. Drag, WASD/arrows or the minimap move the camera, scroll to zoom, change speed at the top, <kbd>Space</kbd> pauses.' }),
+        el('div', { html: '<b>Boons:</b> pick one every few levels. ✦ Effect boons change how you fight (burning attacks, ricochet, echoing spells, exploding kills, cheat death) and stack if you take them again. A <b>power rune</b> spawns mid-lane about every minute: grab it for a Rare-or-better boon.' }),
         el('div', { html: '<b>Goal:</b> destroy the enemy towers, then their nexus. Your fountain heals you; theirs will melt you.' }),
       ]),
     ]),

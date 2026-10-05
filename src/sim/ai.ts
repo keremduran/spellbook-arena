@@ -21,8 +21,11 @@ function abilityPlan(w: World, u: Unit, mode: 'fight' | 'retreat', target?: Unit
   const hpPct = u.hp / u.stats.maxHp;
   let casts = 0;
   const slots = w.rng.sample(ACTIVE_SLOTS, ACTIVE_SLOTS.length);
+  // Difficulty: enemy bots of the player hesitate more on Easy.
+  const hesitant = w.playerTeam !== null && u.team !== w.playerTeam;
   for (const slot of slots) {
     if (casts >= 2) break;
+    if (hesitant && mode === 'fight' && w.rng.next() > w.difficulty().castChance) continue;
     const inst = h.abilities[slot];
     if (!inst || inst.readyAt > w.time || !inst.def.cast) continue;
     const def = inst.def;
@@ -122,6 +125,13 @@ export function thinkHero(w: World, u: Unit) {
       u.order = { kind: 'attack', id: target.id };
       return;
     }
+  }
+
+  // Contest the power rune when it's up and we're healthy enough.
+  const rune = w.rune;
+  if (rune.active && d !== 'farm' && hpPct > 0.4 && dist(u, rune) < 1300) {
+    u.order = { kind: 'move', x: rune.x, y: rune.y };
+    return;
   }
 
   // Group: stick with the rest of the team.

@@ -400,3 +400,43 @@ body.touch .hud .slot.passive { right: 178px; bottom: 112px; width: 44px; height
   @keyframes spinphone { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
 }
 .ver { color: var(--muted); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 4px; }
+
+/* ---------------------------------------------------------------- v3: banners, effect boons */
+
+.banner {
+  position: absolute; top: 18%; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none;
+  animation: banner 2.6s ease-out forwards; z-index: 5;
+}
+.banner b { display: block; font-family: var(--title); font-size: clamp(28px, 5vw, 52px); letter-spacing: 0.04em; text-shadow: 0 3px 18px rgba(0, 0, 0, 0.8), 0 0 30px currentColor; }
+.banner span { font-size: 16px; font-weight: 700; color: var(--text); text-shadow: 0 2px 6px #000; }
+.banner.blue b { color: #8cc6ff; }
+.banner.red b { color: #ff8a8a; }
+.banner.gold b { color: var(--gold); }
+@keyframes banner {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.6); }
+  10% { opacity: 1; transform: translateX(-50%) scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-14px); }
+}
+.boon.effect { background: linear-gradient(135deg, #241b33, #18212c 60%); }
+.boon.effect .bi { filter: drop-shadow(0 0 6px var(--rc)); }
+@media (max-height: 520px) { .banner { top: 12%; } .banner b { font-size: 26px; } .banner span { font-size: 12px; } }
+@media (max-height: 520px) {
+  body.touch .boons, body.touch .manager .boons { left: auto; right: max(12px, env(safe-area-inset-right)); transform: none; top: 50px; width: min(470px, 54vw); }
+  .boon { align-items: flex-start; }
+  .boon p { font-size: 9.5px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .boon .rar { font-size: 9px; }
+  .boons h3 .bt { font-size: 12px; }
+}
+@media (max-height: 520px) {
+  body.touch .boons { top: 48px; padding: 5px 7px; }
+  body.touch .boons h3 { margin-bottom: 3px; }
+  body.touch .boons h3 > small, body.touch .boon .bi, body.touch .boon .hk { display: none; }
+  body.touch .boon { padding: 4px 6px; }
+  body.touch .boon b { font-size: 11px; }
+  body.touch .boon p { -webkit-line-clamp: 4; margin-top: 1px; }
+}
+@media (max-height: 520px) {
+  body.touch .hud:not(.manager) .boons { right: auto; left: 31vw; width: 46vw; }
+  body.touch .boon p { -webkit-line-clamp: 5; }
+}

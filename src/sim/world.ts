@@ -1,9 +1,9 @@
 import { thinkCreep, thinkHero } from './ai';
 import type { AbilityDef } from './abilities';
-import { bestBoonIndex, rollBoonOffer } from './boons';
+import { bestBoonIndex, rollBoonOffer, type EffectId } from './boons';
 import {
-  FIRST_WAVE, FOUNTAIN, FOUNTAIN_RADIUS, LANE_Y, MAP_W, MAX_LEVEL, RANGED_THRESHOLD, STRUCTURE_X, WAVE_INTERVAL,
-  Y_MAX, Y_MIN, laneDir, mirrorX, respawnTime, xpToNext,
+  DIFFICULTY, FIRST_WAVE, FOUNTAIN, FOUNTAIN_RADIUS, LANE_Y, MAP_W, MAX_LEVEL, RANGED_THRESHOLD, RUNE_FIRST, RUNE_INTERVAL, RUNE_RADIUS,
+  STRUCTURE_X, WAVE_INTERVAL, Y_MAX, Y_MIN, laneDir, mirrorX, respawnTime, xpToNext, type Difficulty,
 } from './constants';
 import { heroBaseStats, levelScale, type HeroDef } from './heroes';
 import { Rng } from './rng';
@@ -17,6 +17,8 @@ export interface WorldOptions {
   /** Pick a boon every N levels (0 = never). */
   boonEveryLevels: number;
   seed?: number;
+  /** Enemy bots of the player deal more or less damage and cast more or less often. */
+  difficulty?: Difficulty;
 }
 
 export interface HeroSetup {
@@ -44,6 +46,9 @@ export class World {
   rng: Rng;
   /** Set by an ability's cast to replace its cooldown for this cast only. */
   cooldownOverride: number | null = null;
+  rune = { x: MAP_W / 2, y: LANE_Y, active: false, nextAt: RUNE_FIRST };
+  playerTeam: Team | null = null;
+  private firstBlood = false;
 
   private nextId = 1;
   private nextWave = FIRST_WAVE;
@@ -63,7 +68,7 @@ export class World {
       id: this.nextId++, kind, team, x, y, radius, hp: base.maxHp, stats: { ...base }, baseStats: base, dead: false,
       attackCd: 0, facing: { x: laneDir(team), y: 0 }, order: { kind: 'idle' },
       stunUntil: 0, slowUntil: 0, slowPct: 0, stealthUntil: 0, invulnUntil: 0, shield: 0, shieldUntil: 0,
-      buffs: [], damagedBy: new Map(), lastHitHeroAt: -99,
+      buffs: [], damagedBy: new Map(), lastHitHeroAt: -99, dots: [], nextDot: 0,
     };
     this.units.push(u);
     this.byId.set(u.id, u);
@@ -92,7 +97,9 @@ export class World {
       def: setup.def, name: setup.name, isPlayer: !!setup.isPlayer, managed: !!setup.managed, directive: 'auto', level: 1, xp: 0, kills: 0, deaths: 0, assists: 0,
       respawnAt: 0, abilities, boons: [], offers: [], attackCount: 0, lastCombatAt: -99, moveDir: null,
       retreating: false, nextThink: 0, laneOffset: this.rng.range(-170, 170),
+      effects: {}, secondWindUsed: false, nextThunder: 0, nextStatic: 0, streak: 0, multi: 0, multiAt: -99,
     };
+    if (setup.isPlayer) this.playerTeam = setup.team;
     this.recompute(u);
     u.hp = u.stats.maxHp;
     this.heroList.push(u);
@@ -155,13 +162,40 @@ export class World {
     return this.units.some((c) => c.kind === 'creep' && !c.dead && c.team === team && len(c.x - at.x, c.y - at.y) < r);
   }
 
+  /** Summed rarity of an effect boon (0 when not owned). */
+  effect(u: Unit, id: EffectId) {
+    return u.hero?.effects[id] ?? 0;
+  }
+
+  /** How strong bot-vs-player difficulty makes this unit. */
+  difficulty() {
+    return DIFFICULTY[this.opts.difficulty ?? 'normal'];
+  }
+
+  addDot(src: Unit, tgt: Unit, dps: number, dur: number) {
+    if (tgt.kind === 'tower' || tgt.kind === 'nexus') return;
+    const existing = tgt.dots.find((d) => d.src === src);
+    if (existing) {
+      existing.dps = Math.max(existing.dps, dps);
+      existing.until = this.time + dur;
+    } else tgt.dots.push({ src, dps, until: this.time + dur });
+  }
+
   power(u: Unit, rarity: Rarity) {
     return RARITIES[rarity].mult * u.stats.spellPower * levelScale(u.hero?.level ?? 1);
   }
 
   // ------------------------------------------------------------------ effects API (used by abilities)
 
-  projectile(o: { owner: Unit; dir: Vec; speed: number; range: number; radius: number; color: string; pierce?: boolean; onHit: (t: Unit) => void }) {
+  projectile(o: { owner: Unit; dir: Vec; speed: number; range: number; radius: number; color: string; pierce?: boolean; onHit: (t: Unit) => void; noSplit?: boolean }) {
+    const split = o.noSplit ? 0 : this.effect(o.owner, 'split');
+    if (split > 0) {
+      const angles = split >= 1.8 ? [-0.42, -0.21, 0.21, 0.42] : [-0.25, 0.25];
+      for (const a of angles) {
+        const dir = { x: o.dir.x * Math.cos(a) - o.dir.y * Math.sin(a), y: o.dir.x * Math.sin(a) + o.dir.y * Math.cos(a) };
+        this.projectile({ ...o, dir, noSplit: true });
+      }
+    }
     this.projectiles.push({
       id: this.nextId++, owner: o.owner, team: o.owner.team, x: o.owner.x, y: o.owner.y, vx: o.dir.x * o.speed, vy: o.dir.y * o.speed,
       speed: o.speed, radius: o.radius, range: o.range, traveled: 0, color: o.color, pierce: !!o.pierce, hit: new Set(), onHit: o.onHit,
@@ -180,6 +214,7 @@ export class World {
   }
 
   dash(u: Unit, dir: Vec, dist: number, speed: number, o: { damage?: number; radius?: number; stun?: number; onEnd?: () => void } = {}) {
+    this.afterimage(u);
     u.dash = {
       vx: dir.x * speed, vy: dir.y * speed, until: this.time + dist / speed, hit: new Set(),
       damage: o.damage ?? 0, radius: o.radius ?? 0, stun: o.stun ?? 0, onEnd: o.onEnd,
@@ -187,6 +222,7 @@ export class World {
   }
 
   blinkTo(u: Unit, aim: Vec, maxRange: number) {
+    this.afterimage(u);
     const dx = aim.x - u.x;
     const dy = aim.y - u.y;
     const d = len(dx, dy);
@@ -194,6 +230,13 @@ export class World {
     this.fx({ kind: 'burst', x: u.x, y: u.y, r: 50, color: '#b388ff', duration: 0.35 });
     this.moveUnit(u, u.x + dx * k, u.y + dy * k);
     this.fx({ kind: 'burst', x: u.x, y: u.y, r: 50, color: '#b388ff', duration: 0.35 });
+  }
+
+  private afterimage(u: Unit) {
+    const m = this.effect(u, 'afterimage');
+    if (!m) return;
+    const dmg = 80 * m * levelScale(u.hero!.level);
+    this.nova({ owner: u, x: u.x, y: u.y, radius: 150, delay: 0.15, color: '#b388ff', onHit: (t) => this.damage(u, t, dmg, 'spell') });
   }
 
   moveUnit(u: Unit, x: number, y: number) {
@@ -293,6 +336,13 @@ export class World {
     if (tgt.dead || amount <= 0 || tgt.invulnUntil > this.time || this.isProtected(tgt)) return 0;
     if (src.stats.execute > 0 && tgt.hp / tgt.stats.maxHp < 0.35) amount *= 1 + src.stats.execute;
     if (tgt.structure && src.kind === 'hero' && !this.minionsNear(src.team, tgt, 700)) amount *= 0.4;
+    if (tgt.structure) {
+      // Fortified early (no 4-minute stomps), crumbling in overtime (no 40-minute stalemates).
+      const minutes = this.time / 60;
+      if (minutes < 5) amount *= 0.5;
+      else if (minutes > 15) amount *= 1 + (minutes - 15) * 0.2;
+    }
+    if (this.playerTeam && src.hero && !src.hero.isPlayer && src.team !== this.playerTeam) amount *= this.difficulty().damage;
     amount *= 1 - tgt.stats.damageReduction;
     if (tgt.shield > 0) {
       const absorbed = Math.min(tgt.shield, amount);
@@ -316,6 +366,14 @@ export class World {
     if (src.kind === 'hero' || tgt.kind === 'hero') {
       this.events.push({ type: 'damage', x: tgt.x, y: tgt.y - tgt.radius, amount, crit, srcId: src.id, tgtId: tgt.id });
     }
+    if (tgt.hp <= 0 && tgt.hero && !tgt.hero.secondWindUsed && this.effect(tgt, 'secondWind') > 0) {
+      tgt.hero.secondWindUsed = true;
+      tgt.hp = 1;
+      this.invuln(tgt, 1 + 0.5 * this.effect(tgt, 'secondWind'));
+      this.fx({ kind: 'ring', x: tgt.x, y: tgt.y, r: 120, color: '#fff59d', duration: 0.6 });
+      this.events.push({ type: 'announce', text: 'Second Wind!', sub: tgt.hero.name, team: tgt.team, unitId: tgt.id });
+      return dealt;
+    }
     if (tgt.hp <= 0) this.kill(tgt, src);
     return dealt;
   }
@@ -329,8 +387,40 @@ export class World {
     if (u.kind === 'tower') dmg = this.towerDamage(u, t);
     if (u.hero) u.hero.attackCount++;
     this.damage(u, t, dmg, 'attack', crit);
+    if (u.hero) this.attackEffects(u, t, dmg);
     const passive = u.hero?.abilities.P;
     if (passive?.def.onAttack && !t.dead) passive.def.onAttack(this, u, t, RARITIES[passive.rarity].mult, this.power(u, passive.rarity));
+  }
+
+  /** On-hit effect boons. */
+  private attackEffects(u: Unit, t: Unit, dmg: number) {
+    const h = u.hero!;
+    const ef = h.effects;
+    const ls = levelScale(h.level);
+    if (ef.burn && !t.dead) this.addDot(u, t, 18 * ef.burn * ls, 3);
+    if (ef.frost && !t.dead) this.slow(t, Math.min(0.6, 0.22 * ef.frost), 1.2);
+    if (ef.cleave) {
+      const k = Math.min(1, 0.4 * ef.cleave);
+      for (const e of this.enemiesNear(u.team, t.x, t.y, 150)) if (e !== t) this.damage(u, e, dmg * k, 'spell');
+      this.fx({ kind: 'ring', x: t.x, y: t.y, r: 150, color: '#e0e0e0', duration: 0.25 });
+    }
+    if (ef.ricochet) {
+      const k = Math.min(0.9, 0.45 * ef.ricochet);
+      const extra = this.enemiesNear(u.team, t.x, t.y, 380)
+        .filter((e) => e !== t && this.isVisible(e, u.team))
+        .sort((a, b) => len(a.x - t.x, a.y - t.y) - len(b.x - t.x, b.y - t.y))
+        .slice(0, Math.max(1, Math.round(ef.ricochet)));
+      for (const e of extra) {
+        this.fx({ kind: 'line', x: t.x, y: t.y, x2: e.x, y2: e.y, r: 0, color: '#ffcc80', duration: 0.2, width: 3 });
+        this.damage(u, e, dmg * k, 'spell');
+      }
+    }
+    if (ef.thunder && this.time >= h.nextThunder) {
+      h.nextThunder = this.time + 4 / Math.sqrt(ef.thunder);
+      const d = 70 * ef.thunder * ls;
+      this.fx({ kind: 'line', x: t.x, y: t.y - 400, x2: t.x, y2: t.y, r: 0, color: '#b3e5fc', duration: 0.3, width: 6 });
+      this.nova({ owner: u, x: t.x, y: t.y, radius: 140, delay: 0, color: '#b3e5fc', onHit: (e) => this.damage(u, e, d, 'spell') });
+    }
   }
 
   private towerDamage(tower: Unit, t: Unit) {
@@ -394,8 +484,20 @@ export class World {
     this.events.push({ type: 'cast', unitId: u.id, abilityId: inst.def.id, kind: inst.def.kind, tags: inst.def.tags, color: inst.def.color, x: u.x, y: u.y });
     u.facing = dir;
     if (inst.def.ai !== 'escape' && inst.def.ai !== 'heal') h.lastCombatAt = this.time;
-    const cd = this.cooldownOverride ?? inst.def.cooldown;
+    let cd = this.cooldownOverride ?? inst.def.cooldown;
+    const ef = h.effects;
+    if (inst.def.kind === 'ult' && ef.overcharge) cd *= 1 - Math.min(0.6, 0.3 * ef.overcharge);
     inst.readyAt = this.time + cd * (1 - u.stats.cdr);
+    if (ef.bulwarkCast) this.shield(u, 40 * ef.bulwarkCast * levelScale(h.level), 2);
+    if (ef.echo && inst.def.kind === 'basic' && this.rng.next() < Math.min(1, 0.3 * ef.echo)) {
+      const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
+      this.schedule(0.3, () => {
+        if (u.dead || this.winner || !inst.def.cast) return;
+        if (inst.def.cast(this, u, ctx) !== false) {
+          this.events.push({ type: 'cast', unitId: u.id, abilityId: inst.def.id, kind: inst.def.kind, tags: inst.def.tags, color: inst.def.color, x: u.x, y: u.y });
+        }
+      });
+    }
     return true;
   }
 
@@ -421,12 +523,20 @@ export class World {
       }
     }
 
+    const det = killer ? this.effect(killer, 'detonate') : 0;
+    if (killer && det > 0) {
+      const dmg = victim.stats.maxHp * Math.min(0.5, 0.15 * det);
+      const k = killer;
+      this.nova({ owner: k, x: victim.x, y: victim.y, radius: 200, delay: 0.05, color: '#ff7043', onHit: (e) => this.damage(k, e, dmg, 'spell') });
+    }
+
     if (victim.kind === 'hero') {
       const vh = victim.hero!;
       vh.deaths++;
       vh.respawnAt = this.time + respawnTime(vh.level);
       victim.buffs = [];
       victim.shield = 0;
+      victim.dots = [];
       victim.order = { kind: 'idle' };
       this.kills[enemy]++;
       if (killer?.hero) {
@@ -440,6 +550,9 @@ export class World {
           this.gainXp(a, 55 + 14 * vh.level);
         }
       }
+      const takedown = [killer, ...[...victim.damagedBy.keys()].map((id) => this.unit(id))].filter((a, i, arr): a is Unit => !!a?.hero && a.team !== victim.team && arr.indexOf(a) === i);
+      for (const a of takedown) this.takedownEffects(a);
+      this.announceKill(killer, victim);
       victim.damagedBy.clear();
       this.events.push({
         type: 'kill', killer: killer?.hero?.name ?? (src.kind === 'tower' ? 'Tower' : 'Minions'), killerTeam: enemy,
@@ -457,6 +570,42 @@ export class World {
         this.events.push({ type: 'end', winner: enemy });
       }
     }
+  }
+
+  private takedownEffects(a: Unit) {
+    const ef = a.hero!.effects;
+    if (ef.bloodrush) {
+      for (const s of ['Q', 'W', 'E'] as Slot[]) {
+        const inst = a.hero!.abilities[s];
+        if (inst) inst.readyAt = Math.min(inst.readyAt, this.time);
+      }
+      const r = a.hero!.abilities.R;
+      if (r && ef.bloodrush >= 1.8) r.readyAt = this.time + (r.readyAt - this.time) / 2;
+    }
+    if (ef.momentum) this.addBuff(a, { id: 'momentum', duration: 4, mul: { moveSpeed: 0.35 * ef.momentum, attackSpeed: 0.35 * ef.momentum } });
+  }
+
+  /** First blood, multi-kills, streaks and shutdowns. */
+  private announceKill(killer: Unit | undefined, victim: Unit) {
+    const vh = victim.hero!;
+    const shutdown = vh.streak >= 3;
+    vh.streak = 0;
+    vh.multi = 0;
+    if (!killer?.hero) return;
+    const kh = killer.hero;
+    kh.streak++;
+    kh.multi = this.time - kh.multiAt < 10 ? kh.multi + 1 : 1;
+    kh.multiAt = this.time;
+    const MULTI = ['', '', 'Double Kill', 'Triple Kill', 'Quadra Kill', 'Penta Kill'];
+    const STREAK: Record<number, string> = { 3: 'Killing Spree', 5: 'Rampage', 7: 'Unstoppable', 9: 'Godlike' };
+    let text = '';
+    if (!this.firstBlood) {
+      this.firstBlood = true;
+      text = 'First Blood';
+    } else if (kh.multi >= 2) text = MULTI[Math.min(5, kh.multi)];
+    else if (shutdown) text = 'Shutdown';
+    else if (STREAK[kh.streak]) text = STREAK[kh.streak];
+    if (text) this.events.push({ type: 'announce', text, sub: kh.name, team: killer.team, unitId: killer.id });
   }
 
   gainXp(u: Unit, amount: number) {
@@ -477,7 +626,7 @@ export class World {
 
   offerBoon(u: Unit) {
     const h = u.hero!;
-    h.offers.push(rollBoonOffer(this.rng));
+    h.offers.push(rollBoonOffer(this.rng, 3, 'common', h.boons));
     if (h.isPlayer || h.managed) this.events.push({ type: 'offer', unitId: u.id });
     else this.pickBoon(u, bestBoonIndex(h.offers[0]));
   }
@@ -487,6 +636,8 @@ export class World {
     const offer = h.offers.shift();
     if (!offer) return;
     h.boons.push(offer[Math.max(0, Math.min(offer.length - 1, index))]);
+    h.effects = {};
+    for (const b of h.boons) if (b.def.effect) h.effects[b.def.effect] = (h.effects[b.def.effect] ?? 0) + RARITIES[b.rarity].mult;
     this.recompute(u);
   }
 
@@ -509,7 +660,7 @@ export class World {
         apply(p.def.mods?.(m));
         apply(p.def.dynamicMods?.(u, m));
       }
-      for (const b of h.boons) apply(b.def.mods(RARITIES[b.rarity].mult));
+      for (const b of h.boons) apply(b.def.mods?.(RARITIES[b.rarity].mult));
     }
     for (const b of u.buffs) apply(b);
     const s = emptyStats();
@@ -552,6 +703,20 @@ export class World {
       if (u.buffs.length) u.buffs = u.buffs.filter((b) => b.until > t);
       if (u.hero || u.buffs.length) this.recompute(u);
       if (u.hp < u.stats.maxHp && u.stats.hpRegen > 0) u.hp = Math.min(u.stats.maxHp, u.hp + u.stats.hpRegen * dt);
+      if (u.dots.length && t >= u.nextDot) {
+        u.nextDot = t + 0.5;
+        u.dots = u.dots.filter((d) => d.until > t);
+        for (const d of u.dots) if (!u.dead) this.damage(d.src, u, d.dps * 0.5, 'spell');
+        if (u.dead) continue;
+      }
+      if (u.hero?.effects.static && t >= u.hero.nextStatic) {
+        u.hero.nextStatic = t + 2;
+        const target = this.nearestEnemyTo(u.team, u, 450, u);
+        if (target) {
+          this.fx({ kind: 'line', x: u.x, y: u.y, x2: target.x, y2: target.y, r: 0, color: '#fff59d', duration: 0.2, width: 3 });
+          this.damage(u, target, 30 * u.hero.effects.static * levelScale(u.hero.level), 'spell');
+        }
+      }
       if (u.hero) {
         const p = u.hero.abilities.P;
         p?.def.onTick?.(this, u, dt, RARITIES[p.rarity].mult);
@@ -561,6 +726,8 @@ export class World {
         if (len(u.x - foe.x, u.y - foe.y) < FOUNTAIN_RADIUS) this.damage(this.fountainUnit(otherTeam(u.team)), u, 900 * dt, 'true');
       }
     }
+
+    this.updateRune();
 
     for (const u of this.units) {
       if (u.dead) continue;
@@ -591,6 +758,28 @@ export class World {
     return nexus;
   }
 
+  private updateRune() {
+    const r = this.rune;
+    if (!r.active) {
+      if (this.time >= r.nextAt) {
+        r.active = true;
+        this.events.push({ type: 'runeSpawn', x: r.x, y: r.y });
+      }
+      return;
+    }
+    const taker = this.heroList.find((h) => !h.dead && len(h.x - r.x, h.y - r.y) < RUNE_RADIUS + h.radius);
+    if (!taker) return;
+    r.active = false;
+    r.nextAt = this.time + RUNE_INTERVAL;
+    const h = taker.hero!;
+    this.heal(taker, taker.stats.maxHp * 0.3);
+    this.addBuff(taker, { id: 'rune', duration: 3, mul: { moveSpeed: 0.3 } });
+    this.events.push({ type: 'rune', unitId: taker.id, x: r.x, y: r.y });
+    h.offers.push(rollBoonOffer(this.rng, 3, 'rare', h.boons));
+    if (h.isPlayer || h.managed) this.events.push({ type: 'offer', unitId: taker.id });
+    else this.pickBoon(taker, bestBoonIndex(h.offers[0]));
+  }
+
   private respawn(u: Unit) {
     const f = FOUNTAIN[u.team];
     u.dead = false;
@@ -602,6 +791,8 @@ export class World {
     u.invulnUntil = 0;
     u.order = { kind: 'idle' };
     u.hero!.retreating = false;
+    u.hero!.secondWindUsed = false;
+    u.dots = [];
     this.recompute(u);
     u.hp = u.stats.maxHp;
   }

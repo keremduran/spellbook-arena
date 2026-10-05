@@ -1,44 +1,89 @@
 import type { Rng } from './rng';
 import { RARITIES, RARITY_ORDER, type BoonInst, type Mods, type Rarity } from './types';
 
+/**
+ * Effect boons change how a hero fights (Hades style). Their strength is the summed rarity
+ * multiplier of every copy the hero owns, read by the world through `effectPower`.
+ */
+export type EffectId =
+  | 'burn' | 'frost' | 'ricochet' | 'cleave' | 'thunder'
+  | 'echo' | 'split' | 'overcharge' | 'afterimage' | 'static'
+  | 'bloodrush' | 'detonate' | 'momentum' | 'secondWind' | 'bulwarkCast';
+
 export interface BoonDef {
   id: string;
   name: string;
   icon: string;
+  /** 'effect' boons change behaviour; 'stat' boons are plain numbers. */
+  kind: 'stat' | 'effect';
   desc: (m: number) => string;
-  mods: (m: number) => Mods;
+  mods?: (m: number) => Mods;
+  effect?: EffectId;
 }
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
+const n = (x: number) => Math.round(x);
 
-export const BOONS: BoonDef[] = [
-  { id: 'swift', name: 'Swift Strikes', icon: '⚡', desc: (m) => `+${pct(0.12 * m)} attack speed`, mods: (m) => ({ mul: { attackSpeed: 0.12 * m } }) },
-  { id: 'fleet', name: 'Fleet of Foot', icon: '👟', desc: (m) => `+${pct(0.07 * m)} move speed`, mods: (m) => ({ mul: { moveSpeed: 0.07 * m } }) },
-  { id: 'vitality', name: 'Vitality', icon: '❤️', desc: (m) => `+${pct(0.1 * m)} max health`, mods: (m) => ({ mul: { maxHp: 0.1 * m } }) },
-  { id: 'might', name: 'Might', icon: '💪', desc: (m) => `+${pct(0.1 * m)} attack damage`, mods: (m) => ({ mul: { ad: 0.1 * m } }) },
-  { id: 'arcana', name: 'Arcana', icon: '🔮', desc: (m) => `+${pct(0.12 * m)} spell power`, mods: (m) => ({ mul: { spellPower: 0.12 * m } }) },
-  { id: 'haste', name: 'Haste', icon: '⏱️', desc: (m) => `+${pct(0.06 * m)} cooldown reduction`, mods: (m) => ({ add: { cdr: 0.06 * m } }) },
-  { id: 'vampirism', name: 'Vampirism', icon: '🩸', desc: (m) => `+${pct(0.05 * m)} lifesteal`, mods: (m) => ({ add: { lifesteal: 0.05 * m } }) },
-  { id: 'spell_thirst', name: 'Spell Thirst', icon: '🍷', desc: (m) => `Abilities heal you for ${pct(0.08 * m)} of their damage`, mods: (m) => ({ add: { spellVamp: 0.08 * m } }) },
-  { id: 'precision', name: 'Precision', icon: '🎯', desc: (m) => `+${pct(0.08 * m)} critical strike chance`, mods: (m) => ({ add: { critChance: 0.08 * m } }) },
-  { id: 'bulwark', name: 'Bulwark', icon: '🛡️', desc: (m) => `Take ${pct(0.05 * m)} less damage`, mods: (m) => ({ add: { damageReduction: 0.05 * m } }) },
-  { id: 'regrowth', name: 'Regrowth', icon: '🌱', desc: (m) => `+${Math.round(6 * m)} health regeneration per second`, mods: (m) => ({ add: { hpRegen: 6 * m } }) },
-  { id: 'reach', name: 'Reach', icon: '🔭', desc: (m) => `+${Math.round(40 * m)} attack range`, mods: (m) => ({ add: { attackRange: 40 * m } }) },
-  { id: 'spikes', name: 'Spikes', icon: '🌵', desc: (m) => `Reflect ${pct(0.1 * m)} of damage taken`, mods: (m) => ({ add: { thorns: 0.1 * m } }) },
-  { id: 'reaper', name: 'Reaper', icon: '💀', desc: (m) => `+${pct(0.1 * m)} damage to enemies under 35% health`, mods: (m) => ({ add: { execute: 0.1 * m } }) },
-  { id: 'enchanted', name: 'Enchanted Blade', icon: '✨', desc: (m) => `Attacks deal +${Math.round(12 * m)} bonus damage`, mods: (m) => ({ add: { onHitDamage: 12 * m } }) },
+export const STAT_BOONS: BoonDef[] = [
+  { id: 'swift', name: 'Swift Strikes', icon: '⚡', kind: 'stat', desc: (m) => `+${pct(0.12 * m)} attack speed`, mods: (m) => ({ mul: { attackSpeed: 0.12 * m } }) },
+  { id: 'fleet', name: 'Fleet of Foot', icon: '👟', kind: 'stat', desc: (m) => `+${pct(0.07 * m)} move speed`, mods: (m) => ({ mul: { moveSpeed: 0.07 * m } }) },
+  { id: 'vitality', name: 'Vitality', icon: '❤️', kind: 'stat', desc: (m) => `+${pct(0.1 * m)} max health`, mods: (m) => ({ mul: { maxHp: 0.1 * m } }) },
+  { id: 'might', name: 'Might', icon: '💪', kind: 'stat', desc: (m) => `+${pct(0.1 * m)} attack damage`, mods: (m) => ({ mul: { ad: 0.1 * m } }) },
+  { id: 'arcana', name: 'Arcana', icon: '🔮', kind: 'stat', desc: (m) => `+${pct(0.12 * m)} spell power`, mods: (m) => ({ mul: { spellPower: 0.12 * m } }) },
+  { id: 'haste', name: 'Haste', icon: '⏱️', kind: 'stat', desc: (m) => `+${pct(0.06 * m)} cooldown reduction`, mods: (m) => ({ add: { cdr: 0.06 * m } }) },
+  { id: 'vampirism', name: 'Vampirism', icon: '🩸', kind: 'stat', desc: (m) => `+${pct(0.05 * m)} lifesteal`, mods: (m) => ({ add: { lifesteal: 0.05 * m } }) },
+  { id: 'spell_thirst', name: 'Spell Thirst', icon: '🍷', kind: 'stat', desc: (m) => `Abilities heal you for ${pct(0.08 * m)} of their damage`, mods: (m) => ({ add: { spellVamp: 0.08 * m } }) },
+  { id: 'precision', name: 'Precision', icon: '🎯', kind: 'stat', desc: (m) => `+${pct(0.08 * m)} critical strike chance`, mods: (m) => ({ add: { critChance: 0.08 * m } }) },
+  { id: 'bulwark', name: 'Bulwark', icon: '🛡️', kind: 'stat', desc: (m) => `Take ${pct(0.05 * m)} less damage`, mods: (m) => ({ add: { damageReduction: 0.05 * m } }) },
 ];
 
-export const rollRarity = (rng: Rng): Rarity => rng.weighted(RARITY_ORDER, (r) => RARITIES[r].weight);
+export const EFFECT_BOONS: BoonDef[] = [
+  { id: 'burn', effect: 'burn', name: 'Burning Blade', icon: '🔥', kind: 'effect', desc: (m) => `Attacks burn enemies for ${n(18 * m)} damage per second over 3s.` },
+  { id: 'frost', effect: 'frost', name: 'Frostbite', icon: '🧊', kind: 'effect', desc: (m) => `Attacks chill, slowing by ${pct(Math.min(0.6, 0.22 * m))} for 1.2s.` },
+  { id: 'ricochet', effect: 'ricochet', name: 'Ricochet', icon: '🪃', kind: 'effect', desc: (m) => `Attacks bounce to ${Math.max(1, Math.round(m))} more enemy for ${pct(Math.min(0.9, 0.45 * m))} damage.` },
+  { id: 'cleave', effect: 'cleave', name: 'Cleave', icon: '🌙', kind: 'effect', desc: (m) => `Attacks also hit enemies around the target for ${pct(Math.min(1, 0.4 * m))} damage.` },
+  { id: 'thunder', effect: 'thunder', name: 'Thunderstep', icon: '🌩️', kind: 'effect', desc: (m) => `Every ${(4 / Math.sqrt(m)).toFixed(1)}s your next attack calls down lightning on the target area for ${n(70 * m)} damage.` },
+  { id: 'echo', effect: 'echo', name: 'Echo', icon: '🔁', kind: 'effect', desc: (m) => `Basic abilities have a ${pct(Math.min(1, 0.3 * m))} chance to cast a second time.` },
+  { id: 'split', effect: 'split', name: 'Split Shot', icon: '🎆', kind: 'effect', desc: (m) => `Ability projectiles fire ${m >= 1.8 ? 4 : 2} extra copies in a spread.` },
+  { id: 'overcharge', effect: 'overcharge', name: 'Overcharge', icon: '🔋', kind: 'effect', desc: (m) => `Your ultimate's cooldown is ${pct(Math.min(0.6, 0.3 * m))} shorter.` },
+  { id: 'afterimage', effect: 'afterimage', name: 'Afterimage', icon: '👥', kind: 'effect', desc: (m) => `Dashes and blinks leave an explosion behind for ${n(80 * m)} damage.` },
+  { id: 'static', effect: 'static', name: 'Static Field', icon: '⚡', kind: 'effect', desc: (m) => `Every 2s, zap the nearest enemy for ${n(30 * m)} damage.` },
+  { id: 'bloodrush', effect: 'bloodrush', name: 'Bloodrush', icon: '🩸', kind: 'effect', desc: (m) => `Hero kills and assists refresh your basic abilities${m >= 1.8 ? ' and half your ultimate' : ''}.` },
+  { id: 'detonate', effect: 'detonate', name: 'Detonate', icon: '💣', kind: 'effect', desc: (m) => `Enemies you kill explode for ${pct(Math.min(0.5, 0.15 * m))} of their max health to nearby enemies.` },
+  { id: 'momentum', effect: 'momentum', name: 'Momentum', icon: '🌪️', kind: 'effect', desc: (m) => `Takedowns give ${pct(0.35 * m)} move speed and attack speed for 4s.` },
+  { id: 'secondWind', effect: 'secondWind', name: 'Second Wind', icon: '🪽', kind: 'effect', desc: (m) => `Once per life, survive a killing blow and become untouchable for ${(1 + 0.5 * m).toFixed(1)}s.` },
+  { id: 'bulwarkCast', effect: 'bulwarkCast', name: 'Spellshield', icon: '🔰', kind: 'effect', desc: (m) => `Casting an ability shields you for ${n(40 * m)} for 2s.` },
+];
 
-export const rollBoonOffer = (rng: Rng, count = 3): BoonInst[] =>
-  rng.sample(BOONS, count).map((def) => ({ def, rarity: rollRarity(rng) }));
+export const BOONS: BoonDef[] = [...STAT_BOONS, ...EFFECT_BOONS];
 
-/** Bots take the highest rarity option. */
+export const rollRarity = (rng: Rng, minRarity: Rarity = 'common'): Rarity => {
+  const allowed = RARITY_ORDER.slice(RARITY_ORDER.indexOf(minRarity));
+  return rng.weighted(allowed, (r) => RARITIES[r].weight);
+};
+
+/**
+ * Three options. At least one is an effect boon so every choice can change how you play,
+ * and effects you already own are more likely to show up again (they stack).
+ */
+export const rollBoonOffer = (rng: Rng, count = 3, minRarity: Rarity = 'common', owned: BoonInst[] = []): BoonInst[] => {
+  const ownedEffects = new Set(owned.filter((b) => b.def.kind === 'effect').map((b) => b.def.id));
+  const pickEffect = () => rng.weighted(EFFECT_BOONS, (b) => (ownedEffects.has(b.id) ? 2.5 : 1));
+  const chosen: BoonDef[] = [pickEffect()];
+  while (chosen.length < count) {
+    const pool = rng.next() < 0.55 ? EFFECT_BOONS : STAT_BOONS;
+    const b = pool === EFFECT_BOONS ? pickEffect() : rng.pick(pool);
+    if (!chosen.includes(b)) chosen.push(b);
+  }
+  return rng.sample(chosen, chosen.length).map((def) => ({ def, rarity: rollRarity(rng, minRarity) }));
+};
+
+/** Bots take the highest rarity option, preferring effect boons on ties. */
 export const bestBoonIndex = (offer: BoonInst[]) => {
   let best = 0;
+  const score = (b: BoonInst) => RARITY_ORDER.indexOf(b.rarity) * 2 + (b.def.kind === 'effect' ? 1 : 0);
   offer.forEach((b, i) => {
-    if (RARITY_ORDER.indexOf(b.rarity) > RARITY_ORDER.indexOf(offer[best].rarity)) best = i;
+    if (score(b) > score(offer[best])) best = i;
   });
   return best;
 };

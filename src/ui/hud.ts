@@ -141,6 +141,7 @@ export class Hud {
   }
 
   onEvents(events: GameEvent[]) {
+    bannerEvents(this.root, events, this.world);
     for (const e of events) {
       if (e.type === 'kill') {
         const line = el('div', {}, [
@@ -270,6 +271,12 @@ export function drawMinimap(canvas: HTMLCanvasElement, world: World, view: Team 
   c.fillRect(0, 0, canvas.width, canvas.height);
   c.fillStyle = '#223828';
   c.fillRect(0, 360 * sy, canvas.width, 380 * sy);
+  if (world.rune.active) {
+    c.fillStyle = '#ffca28';
+    c.beginPath();
+    c.arc(world.rune.x * sx, world.rune.y * sy, 7, 0, Math.PI * 2);
+    c.fill();
+  }
   for (const u of world.units) {
     if (u.dead) continue;
     if (view && u.team !== view && !world.isVisible(u, view)) continue;
@@ -280,6 +287,26 @@ export function drawMinimap(canvas: HTMLCanvasElement, world: World, view: Team 
     if (u.kind === 'tower' || u.kind === 'nexus') c.rect(u.x * sx - r, u.y * sy - r, r * 2, r * 2);
     else c.arc(u.x * sx, u.y * sy, r, 0, Math.PI * 2);
     c.fill();
+  }
+}
+
+/** Big centred banner for announcements (First Blood, Rampage, rune spawns). */
+export function showBanner(root: HTMLElement, text: string, sub: string, team: Team | 'gold') {
+  root.querySelector('.banner')?.remove();
+  const b = el(`div.banner.${team}`, {}, [el('b', { text }), sub ? el('span', { text: sub }) : null]);
+  root.append(b);
+  setTimeout(() => b.remove(), 2600);
+}
+
+/** Banners for announcement and rune events. */
+export function bannerEvents(root: HTMLElement, events: GameEvent[], world: World) {
+  for (const e of events) {
+    if (e.type === 'announce') showBanner(root, e.text, e.sub, e.team);
+    else if (e.type === 'runeSpawn') showBanner(root, 'Power Rune', 'Mid lane: grab it for a Rare+ boon', 'gold');
+    else if (e.type === 'rune') {
+      const u = world.unit(e.unitId);
+      if (u?.hero) showBanner(root, `${u.hero.name} took the rune`, '', u.team);
+    }
   }
 }
 
@@ -309,9 +336,14 @@ export function portrait(u: Unit, size: 'sm' | 'md' = 'md') {
 export function boonCards(offer: BoonInst[], onPick: (i: number) => void) {
   return el('div.boon-row', {}, offer.map((b, i) => {
     const r = RARITIES[b.rarity];
-    return el('button.boon', { style: `--rc:${r.color}`, onclick: () => onPick(i) }, [
+    const effect = b.def.kind === 'effect';
+    return el(`button.boon${effect ? '.effect' : ''}`, { style: `--rc:${r.color}`, onclick: () => onPick(i) }, [
       el('span.bi', { text: b.def.icon }),
-      el('div', {}, [el('b', { text: b.def.name }), el('span.rar', { text: r.label }), el('p', { text: b.def.desc(r.mult) })]),
+      el('div', {}, [
+        el('b', { text: b.def.name }),
+        el('span.rar', { text: effect ? `✦ ${r.label}` : r.label, title: effect ? 'Effect boon: changes how you fight' : '' }),
+        el('p', { text: b.def.desc(r.mult) }),
+      ]),
       el('kbd.hk', { text: String(i + 1) }),
     ]);
   }));

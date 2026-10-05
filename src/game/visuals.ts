@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { FOUNTAIN, FOUNTAIN_RADIUS, LANE_Y, MAP_H, MAP_W, Y_MAX, Y_MIN } from '../sim/constants';
+import { FOUNTAIN, FOUNTAIN_RADIUS, LANE_Y, MAP_H, MAP_W, RUNE_RADIUS, Y_MAX, Y_MIN } from '../sim/constants';
 import { Rng } from '../sim/rng';
 import type { GameEvent, Team, Unit } from '../sim/types';
 import type { World } from '../sim/world';
@@ -42,6 +42,7 @@ export class Visuals {
   private swings: Swing[] = [];
   private beams: Beam[] = [];
   private wasMoving = new Map<number, { x: number; y: number; phase: number }>();
+  private runeGlow!: Phaser.GameObjects.Image;
 
   constructor(private scene: Phaser.Scene, private world: World, private focus: () => Unit | null) {}
 
@@ -55,6 +56,8 @@ export class Visuals {
     this.smoke = s.add.particles(0, 0, 'smoke', { emitting: false, lifespan: { min: 600, max: 1200 }, speed: { min: 20, max: 110 }, scale: { start: 0.6, end: 1.6 }, alpha: { start: 0.45, end: 0 }, rotate: { min: 0, max: 360 } }).setDepth(10);
     this.trail = s.add.particles(0, 0, 'glow', { ...base, lifespan: 260, speed: { min: 0, max: 25 }, scale: { start: 0.28, end: 0 }, alpha: { start: 0.9, end: 0 } }).setDepth(8);
     this.rise = s.add.particles(0, 0, 'spark', { ...base, lifespan: { min: 600, max: 1100 }, speedY: { min: -160, max: -60 }, speedX: { min: -30, max: 30 }, scale: { start: 1, end: 0 }, alpha: { start: 1, end: 0 } }).setDepth(12);
+
+    this.runeGlow = s.add.image(this.world.rune.x, this.world.rune.y, 'glow').setTint(0xffca28).setBlendMode(Phaser.BlendModes.ADD).setDepth(2).setVisible(false);
 
     // Subtle vignette for depth (WebGL only; phones skip it to save fill rate).
     const cam = s.cameras.main;
@@ -334,6 +337,31 @@ export class Visuals {
       }
     }
 
+    // Power rune: a spinning golden crystal.
+    const rune = w.rune;
+    this.runeGlow.setVisible(rune.active);
+    if (rune.active) {
+      const a = t * 2;
+      const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+      this.runeGlow.setScale(1.6 + pulse * 0.5).setAlpha(0.7);
+      g.lineStyle(3, 0xffca28, 0.6).strokeCircle(rune.x, rune.y, RUNE_RADIUS + 18 + pulse * 6);
+      const pts = [0, 1, 2, 3].map((i) => new Phaser.Math.Vector2(rune.x + Math.cos(a + (i * Math.PI) / 2) * (i % 2 ? 16 : 30), rune.y - 10 + Math.sin(a + (i * Math.PI) / 2) * (i % 2 ? 16 : 30) * 0.6));
+      g.fillStyle(0xffe082, 1).fillPoints(pts, true);
+      g.fillStyle(0xffffff, 0.8).fillCircle(rune.x - 4, rune.y - 14, 5);
+      if (Math.random() < 0.5) {
+        this.rise.setParticleTint(0xffd54f);
+        this.rise.emitParticleAt(rune.x + (Math.random() - 0.5) * 50, rune.y + 10, 1);
+      }
+    }
+
+    // Burning units smoulder.
+    for (const u of w.units) {
+      if (!u.dead && u.dots.length && Math.random() < 0.5) {
+        this.embers.setParticleTint(0xff7043);
+        this.embers.emitParticleAt(u.x + (Math.random() - 0.5) * u.radius, u.y - u.radius * 0.5, 1);
+      }
+    }
+
     // Melee swings: a bright arc in the facing direction.
     this.swings = this.swings.filter((s) => now - s.born < 160);
     for (const s of this.swings) {
@@ -520,6 +548,19 @@ export class Visuals {
           if (u === me) sfx.play('levelUp');
           break;
         }
+        case 'runeSpawn':
+          sfx.play('rune', 0.8);
+          this.rise.setParticleTint(0xffca28);
+          this.rise.explode(30, e.x, e.y + 20);
+          break;
+        case 'rune':
+          this.sparks.setParticleTint(0xffca28);
+          this.sparks.explode(40, e.x, e.y);
+          this.sound('rune', e.x, e.y, e.unitId === me?.id);
+          break;
+        case 'announce':
+          sfx.play('announce', 0.8);
+          break;
         case 'offer':
           if (e.unitId === me?.id || !me) sfx.play('boon', me ? 1 : 0.5);
           break;

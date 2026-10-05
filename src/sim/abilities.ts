@@ -341,10 +341,16 @@ const ULTS: AbilityDef[] = [
     cooldown: 50, range: 1400, ai: 'damage',
     desc: (p) => `After 0.4s, fire a beam across a huge line dealing ${n(340 * p)} damage.`,
     cast: (w, u, c) => {
-      const dir = { ...c.dir };
-      w.fx({ kind: 'line', x: u.x, y: u.y, x2: u.x + dir.x * 1400, y2: u.y + dir.y * 1400, r: 0, color: '#fff9c4', duration: 0.4, width: 3 });
+      // Remember the aimed point so the beam still hits it if the caster moves during the wind-up.
+      const close = Math.hypot(c.aim.x - u.x, c.aim.y - u.y) < 60;
+      const target = close ? { x: u.x + c.dir.x * 1400, y: u.y + c.dir.y * 1400 } : { x: c.aim.x, y: c.aim.y };
+      w.fx({ kind: 'line', x: u.x, y: u.y, x2: u.x + c.dir.x * 1400, y2: u.y + c.dir.y * 1400, r: 0, color: '#fff9c4', duration: 0.4, width: 3 });
       w.schedule(0.4, () => {
         if (u.dead) return;
+        const dx = target.x - u.x;
+        const dy = target.y - u.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const dir = { x: dx / d, y: dy / d };
         w.fx({ kind: 'line', x: u.x, y: u.y, x2: u.x + dir.x * 1400, y2: u.y + dir.y * 1400, r: 0, color: '#ffeb3b', duration: 0.35, width: 40 });
         w.lineHit(u, dir, 1400, 55, (e) => w.damage(u, e, 340 * c.p, 'spell'));
       });

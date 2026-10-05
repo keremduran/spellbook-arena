@@ -108,7 +108,7 @@ function startDraft(settings: Settings) {
 }
 
 function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, picks: Picks) {
-  const world = new World({ boonEveryLevels: settings.boonEveryLevels, seed });
+  const world = new World({ boonEveryLevels: settings.boonEveryLevels, seed, difficulty: settings.difficulty });
   for (const s of buildRoster(rng, settings.teamSize, { def: hero, picks, name: settings.name })) world.addHero(s);
   const player = world.heroList.find((u) => u.hero!.isPlayer)!;
 

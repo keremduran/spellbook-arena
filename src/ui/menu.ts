@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.6 · tank skills, stacking fixes, boon previews';
+export const VERSION = 'v3.7 · tank boosts halved';
 
 export interface Settings {
   mode: 'play' | 'manage';

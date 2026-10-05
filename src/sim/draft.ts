@@ -14,7 +14,7 @@ export type Draft = Record<Slot, DraftOption[]>;
 export type Picks = Record<Slot, DraftOption>;
 
 export const OPTIONS_PER_SLOT = 4;
-const TANK_WEIGHT = 1.8;
+const TANK_WEIGHT = 1.4;
 
 /**
  * Four truly random options per key. Q/W/E draw from the basic pool (no repeats across keys),

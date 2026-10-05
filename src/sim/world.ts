@@ -518,7 +518,7 @@ export class World {
     const ef = h.effects;
     if (inst.def.kind === 'ult' && ef.overcharge) cd *= 1 - Math.min(0.6, 0.3 * ef.overcharge);
     inst.readyAt = this.time + cd * (1 - u.stats.cdr);
-    if (ef.bulwarkCast) this.shield(u, 70 * ef.bulwarkCast * levelScale(h.level), 3);
+    if (ef.bulwarkCast) this.shield(u, 55 * ef.bulwarkCast * levelScale(h.level), 2.5);
     if (ef.echo && inst.def.kind === 'basic' && this.rng.next() < Math.min(1, 0.3 * ef.echo)) {
       const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
       this.schedule(0.3, () => {

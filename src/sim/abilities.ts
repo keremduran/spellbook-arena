@@ -157,10 +157,10 @@ const BASICS: AbilityDef[] = [
   },
   {
     id: 'iron_skin', name: 'Iron Skin', icon: '🪨', color: '#bdbdbd', kind: 'basic', tags: ['tank', 'shield'],
-    cooldown: 9, range: 0, ai: 'heal',
-    desc: (p) => `Gain a ${n(230 * p)} damage shield for 4s.`,
+    cooldown: 9.5, range: 0, ai: 'heal',
+    desc: (p) => `Gain a ${n(185 * p)} damage shield for 3.5s.`,
     cast: (w, u, c) => {
-      w.shield(u, 230 * c.p, 4);
+      w.shield(u, 185 * c.p, 3.5);
     },
   },
   {
@@ -291,18 +291,18 @@ const BASICS: AbilityDef[] = [
   {
     id: 'bulwark_stance', name: 'Bulwark Stance', icon: '🧱', color: '#a1887f', kind: 'basic', tags: ['tank', 'damage reduction', 'heal'],
     cooldown: 12, range: 0, ai: 'heal',
-    desc: (_p, m) => `For 4s take ${pct(Math.min(0.5, 0.3 * m))} less damage and heal back 40% of the damage you take.`,
+    desc: (_p, m) => `For 4s take ${pct(Math.min(0.4, 0.22 * m))} less damage and heal back 30% of the damage you take.`,
     cast: (w, u, c) => {
-      w.addBuff(u, { id: 'bulwark_stance', duration: 4, add: { damageReduction: Math.min(0.5, 0.3 * c.m), recoup: 0.4 } });
+      w.addBuff(u, { id: 'bulwark_stance', duration: 4, add: { damageReduction: Math.min(0.4, 0.22 * c.m), recoup: 0.3 } });
       w.fx({ kind: 'ring', x: u.x, y: u.y, r: 70, color: '#a1887f', duration: 0.5 });
     },
   },
   {
     id: 'mending', name: 'Mending', icon: '🩹', color: '#81c784', kind: 'basic', tags: ['tank', 'heal', 'regeneration'],
     cooldown: 14, range: 0, ai: 'heal',
-    desc: (_p, m) => `Regenerate ${pct(Math.min(0.6, 0.3 * m))} of your max health over 5s.`,
+    desc: (_p, m) => `Regenerate ${pct(Math.min(0.45, 0.22 * m))} of your max health over 5s.`,
     cast: (w, u, c) => {
-      w.addBuff(u, { id: 'mending', duration: 5, add: { regenPct: Math.min(0.12, 0.06 * c.m) } });
+      w.addBuff(u, { id: 'mending', duration: 5, add: { regenPct: Math.min(0.09, 0.045 * c.m) } });
     },
   },
 ];
@@ -338,10 +338,10 @@ const ULTS: AbilityDef[] = [
   {
     id: 'avatar', name: 'Avatar', icon: '🗿', color: '#ffcc80', kind: 'ult', tags: ['tank', 'buff', 'attack speed', 'size'],
     cooldown: 60, range: 0, ai: 'self',
-    desc: (p, m) => `Grow huge for 10s: +${pct(0.45 * m)} attack damage and attack speed, +40% max health, 15% lifesteal, and heal ${n(300 * p)}.`,
+    desc: (p, m) => `Grow huge for 10s: +${pct(0.45 * m)} attack damage and attack speed, +35% max health, 15% lifesteal, and heal ${n(275 * p)}.`,
     cast: (w, u, c) => {
-      w.addBuff(u, { id: 'avatar', duration: 10, mul: { ad: 0.45 * c.m, attackSpeed: 0.45 * c.m, maxHp: 0.4 }, add: { size: 0.35, lifesteal: 0.15 } });
-      w.heal(u, 300 * c.p);
+      w.addBuff(u, { id: 'avatar', duration: 10, mul: { ad: 0.45 * c.m, attackSpeed: 0.45 * c.m, maxHp: 0.35 }, add: { size: 0.35, lifesteal: 0.15 } });
+      w.heal(u, 275 * c.p);
     },
   },
   {
@@ -402,12 +402,12 @@ const ULTS: AbilityDef[] = [
   {
     id: 'resurgence', name: 'Resurgence', icon: '🌅', color: '#f48fb1', kind: 'ult', tags: ['tank', 'heal', 'support', 'cleanse'],
     cooldown: 60, range: 600, ai: 'heal',
-    desc: (_p, m) => `Cleanse yourself, heal ${pct(Math.min(0.9, 0.48 * m))} of your max health and heal nearby allied heroes for 30%.`,
+    desc: (_p, m) => `Cleanse yourself, heal ${pct(Math.min(0.9, 0.44 * m))} of your max health and heal nearby allied heroes for 27%.`,
     cast: (w, u, c) => {
       u.stunUntil = 0;
       u.slowUntil = 0;
-      w.heal(u, u.stats.maxHp * Math.min(0.9, 0.48 * c.m));
-      for (const a of w.alliesNear(u.team, u.x, u.y, 600, true)) if (a !== u) w.heal(a, a.stats.maxHp * 0.3);
+      w.heal(u, u.stats.maxHp * Math.min(0.9, 0.44 * c.m));
+      for (const a of w.alliesNear(u.team, u.x, u.y, 600, true)) if (a !== u) w.heal(a, a.stats.maxHp * 0.275);
       w.fx({ kind: 'ring', x: u.x, y: u.y, r: 600, color: '#f48fb1', duration: 0.6 });
     },
   },
@@ -430,10 +430,10 @@ const ULTS: AbilityDef[] = [
   {
     id: 'time_warp', name: 'Time Warp', icon: '⏳', color: '#ffe082', kind: 'ult', tags: ['tank', 'invulnerable', 'heal'],
     cooldown: 50, range: 0, ai: 'heal',
-    desc: (_p, m) => `Freeze yourself in time for 2.5s: untargetable and immune to damage. Then heal ${pct(0.2 * m)} max health.`,
+    desc: (_p, m) => `Freeze yourself in time for 2.5s: untargetable and immune to damage. Then heal ${pct(0.175 * m)} max health.`,
     cast: (w, u, c) => {
       w.invuln(u, 2.5);
-      w.schedule(2.5, () => { if (!u.dead) w.heal(u, u.stats.maxHp * 0.2 * c.m); });
+      w.schedule(2.5, () => { if (!u.dead) w.heal(u, u.stats.maxHp * 0.175 * c.m); });
     },
   },
   {
@@ -452,9 +452,9 @@ const ULTS: AbilityDef[] = [
   {
     id: 'colossus', name: 'Colossus', icon: '🏔️', color: '#8d6e63', kind: 'ult', tags: ['tank', 'health', 'size'],
     cooldown: 55, range: 0, ai: 'heal',
-    desc: (_p, m) => `For 8s grow massive: +${pct(0.45 * m)} max health (gained as health), 15% less damage taken and 2% health regen per second.`,
+    desc: (_p, m) => `For 8s grow massive: +${pct(0.34 * m)} max health (gained as health), 11% less damage taken and 1.5% health regen per second.`,
     cast: (w, u, c) => {
-      w.addBuff(u, { id: 'colossus', duration: 8, mul: { maxHp: 0.45 * c.m }, add: { damageReduction: 0.15, regenPct: 0.02, size: 0.5 } });
+      w.addBuff(u, { id: 'colossus', duration: 8, mul: { maxHp: 0.34 * c.m }, add: { damageReduction: 0.11, regenPct: 0.015, size: 0.5 } });
       w.fx({ kind: 'ring', x: u.x, y: u.y, r: 160, color: '#8d6e63', duration: 0.6 });
     },
   },
@@ -480,8 +480,8 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'giant', name: 'Giant Blood', icon: '🦣', color: '#8d6e63', kind: 'passive', tags: ['tank', 'health', 'size'], cooldown: 0, range: 0,
-    desc: (_p, m) => `+${pct(0.23 * m)} max health. You are bigger.`,
-    mods: (m) => ({ mul: { maxHp: 0.23 * m }, add: { size: 0.25 } }),
+    desc: (_p, m) => `+${pct(0.215 * m)} max health. You are bigger.`,
+    mods: (m) => ({ mul: { maxHp: 0.215 * m }, add: { size: 0.25 } }),
   },
   {
     id: 'spellweaver', name: 'Spellweaver', icon: '📖', color: '#7986cb', kind: 'passive', tags: ['spell power', 'cooldowns'], cooldown: 0, range: 0,
@@ -507,8 +507,8 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'thornmail', name: 'Thorns', icon: '🌵', color: '#7cb342', kind: 'passive', tags: ['tank', 'thorns', 'health'], cooldown: 0, range: 0,
-    desc: (_p, m) => `Reflect ${pct(0.3 * m)} of damage taken back to the attacker. +12% max health.`,
-    mods: (m) => ({ add: { thorns: 0.3 * m }, mul: { maxHp: 0.12 } }),
+    desc: (_p, m) => `Reflect ${pct(0.275 * m)} of damage taken back to the attacker. +11% max health.`,
+    mods: (m) => ({ add: { thorns: 0.275 * m }, mul: { maxHp: 0.11 } }),
   },
   {
     id: 'executioner', name: 'Executioner', icon: '🪓', color: '#b71c1c', kind: 'passive', tags: ['execute'], cooldown: 0, range: 0,
@@ -524,9 +524,9 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'troll_blood', name: 'Troll Blood', icon: '🧌', color: '#66bb6a', kind: 'passive', tags: ['tank', 'regeneration'], cooldown: 0, range: 0,
-    desc: (_p, m) => `Regenerate ${(1.8 * m).toFixed(1)}% of your max health per second.`,
+    desc: (_p, m) => `Regenerate ${(1.65 * m).toFixed(2)}% of your max health per second.`,
     onTick: (w, u, dt, m) => {
-      if (u.hp < u.stats.maxHp) w.heal(u, u.stats.maxHp * 0.018 * m * dt, true);
+      if (u.hp < u.stats.maxHp) w.heal(u, u.stats.maxHp * 0.0165 * m * dt, true);
     },
   },
   {
@@ -541,8 +541,8 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'last_stand', name: 'Last Stand', icon: '🩹', color: '#ef9a9a', kind: 'passive', tags: ['tank', 'damage reduction', 'attack speed'], cooldown: 0, range: 0,
-    desc: (_p, m) => `Below 40% health, take 35% less damage and gain ${pct(0.35 * m)} attack speed.`,
-    dynamicMods: (u, m) => (u.hp / u.stats.maxHp < 0.4 ? { add: { damageReduction: 0.35 }, mul: { attackSpeed: 0.35 * m } } : null),
+    desc: (_p, m) => `Below 37% health, take 32% less damage and gain ${pct(0.35 * m)} attack speed.`,
+    dynamicMods: (u, m) => (u.hp / u.stats.maxHp < 0.375 ? { add: { damageReduction: 0.325 }, mul: { attackSpeed: 0.35 * m } } : null),
   },
   {
     id: 'arcane_echo', name: 'Arcane Echo', icon: '🔁', color: '#b39ddb', kind: 'passive', tags: ['cooldowns'], cooldown: 0, range: 0,
@@ -551,13 +551,13 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'iron_will', name: 'Iron Will', icon: '🔩', color: '#90a4ae', kind: 'passive', tags: ['tank', 'heal'], cooldown: 0, range: 0,
-    desc: (_p, m) => `Heal back ${pct(Math.min(0.5, 0.17 * m))} of all damage you take over 2s. +8% max health.`,
-    mods: (m) => ({ add: { recoup: Math.min(0.5, 0.17 * m) }, mul: { maxHp: 0.08 } }),
+    desc: (_p, m) => `Heal back ${pct(Math.min(0.4, 0.13 * m))} of all damage you take over 2s. +8% max health.`,
+    mods: (m) => ({ add: { recoup: Math.min(0.4, 0.13 * m) }, mul: { maxHp: 0.08 } }),
   },
   {
     id: 'fortress', name: 'Fortress', icon: '🏰', color: '#78909c', kind: 'passive', tags: ['tank', 'damage reduction', 'regeneration'], cooldown: 0, range: 0,
-    desc: (_p, m) => `Take ${pct(Math.min(0.3, 0.09 * m))} less damage and regenerate ${(0.45 * m).toFixed(2)}% max health per second.`,
-    mods: (m) => ({ add: { damageReduction: Math.min(0.3, 0.09 * m), regenPct: 0.0045 * m } }),
+    desc: (_p, m) => `Take ${pct(Math.min(0.22, 0.07 * m))} less damage and regenerate ${(0.35 * m).toFixed(2)}% max health per second.`,
+    mods: (m) => ({ add: { damageReduction: Math.min(0.22, 0.07 * m), regenPct: 0.0035 * m } }),
   },
 ];
 

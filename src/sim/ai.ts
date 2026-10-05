@@ -63,6 +63,8 @@ function abilityPlan(w: World, u: Unit, mode: 'fight' | 'retreat', target?: Unit
   }
 }
 
+const FIGHT_RANGE = { auto: 750, push: 380, farm: 450, group: 900, retreat: 0 };
+
 export function thinkHero(w: World, u: Unit) {
   const h = u.hero!;
   if (w.time < h.nextThink) return;
@@ -70,21 +72,33 @@ export function thinkHero(w: World, u: Unit) {
   const hpPct = u.hp / u.stats.maxHp;
   const fountain = FOUNTAIN[u.team];
   const dir = laneDir(u.team);
+  const d = h.directive;
 
   if (hpPct < 0.25) h.retreating = true;
   if (h.retreating && hpPct > 0.9) h.retreating = false;
 
   const enemies = w.heroList.filter((e) => w.attackable(u, e) && dist(e, u) < 900);
 
-  if (h.retreating) {
+  if (h.retreating || d === 'retreat') {
     if (enemies.length) abilityPlan(w, u, 'retreat');
-    u.order = { kind: 'move', x: fountain.x, y: fountain.y };
+    u.order = { kind: 'move', x: fountain.x + dir * 40, y: fountain.y };
     return;
+  }
+
+  // A focus order overrides target choice (unless it means diving a tower without pushing).
+  if (h.focusId !== undefined) {
+    const f = w.unit(h.focusId);
+    if (!f || f.kind !== 'hero') h.focusId = undefined;
+    else if (!f.dead && w.attackable(u, f) && dist(f, u) < 1400 && (d === 'push' || !towerDanger(w, u, f) || f.hp / f.stats.maxHp < 0.3)) {
+      abilityPlan(w, u, 'fight', f);
+      u.order = { kind: 'attack', id: f.id };
+      return;
+    }
   }
 
   // Back off if a tower is shooting at us with no minions to tank.
   const shotBy = w.units.find((t) => t.kind === 'tower' && !t.dead && t.team !== u.team && t.structure?.targetId === u.id && dist(t, u) < t.stats.attackRange + 40);
-  if (shotBy && hpPct < 0.85 && !enemies.some((e) => e.hp / e.stats.maxHp < 0.15)) {
+  if (shotBy && hpPct < (d === 'push' ? 0.5 : 0.85) && !enemies.some((e) => e.hp / e.stats.maxHp < 0.15)) {
     u.order = { kind: 'move', x: u.x - dir * 350, y: u.y };
     return;
   }
@@ -93,9 +107,9 @@ export function thinkHero(w: World, u: Unit) {
   let target: Unit | undefined;
   let best = Infinity;
   for (const e of enemies) {
-    const d = dist(e, u);
-    if (d > 750) continue;
-    const score = d + (e.hp / e.stats.maxHp) * 450;
+    const de = dist(e, u);
+    if (de > FIGHT_RANGE[d]) continue;
+    const score = de + (e.hp / e.stats.maxHp) * 450;
     if (score < best) {
       best = score;
       target = e;
@@ -110,29 +124,44 @@ export function thinkHero(w: World, u: Unit) {
     }
   }
 
+  // Group: stick with the rest of the team.
+  if (d === 'group') {
+    const mates = w.heroList.filter((a) => a !== u && a.team === u.team && !a.dead);
+    if (mates.length) {
+      const cx = mates.reduce((s, a) => s + a.x, 0) / mates.length;
+      const cy = mates.reduce((s, a) => s + a.y, 0) / mates.length;
+      if (Math.hypot(cx - u.x, cy - u.y) > 260) {
+        u.order = { kind: 'move', x: cx, y: cy };
+        return;
+      }
+    }
+  }
+
   // Farm minions.
   let creep: Unit | undefined;
   best = Infinity;
   for (const c of w.units) {
     if (c.kind !== 'creep' || !w.attackable(u, c)) continue;
-    const d = dist(c, u);
-    if (d > 700 || towerDanger(w, u, c)) continue;
-    const score = d + (c.hp / c.stats.maxHp) * 200;
+    const dc = dist(c, u);
+    if (dc > (d === 'group' ? 500 : 700) || towerDanger(w, u, c)) continue;
+    const score = dc + (c.hp / c.stats.maxHp) * 200;
     if (score < best) {
       best = score;
       creep = c;
     }
   }
+
+  // Pushing bots hit structures before minions; others only when minions are tanking.
+  const alliesNear = (p: Vec) => w.heroList.filter((a) => a.team === u.team && !a.dead && dist(a, p) < 650).length;
+  const structure = w.units.find((s) => (s.kind === 'tower' || s.kind === 'nexus') && w.attackable(u, s) && dist(s, u) < 750
+    && (!towerDanger(w, u, s) || (d === 'push' && hpPct > 0.55 && alliesNear(s) >= 2)));
+  if (structure && (d === 'push' || !creep)) {
+    u.order = { kind: 'attack', id: structure.id };
+    return;
+  }
   if (creep) {
     if (hpPct > 0.6 && w.rng.next() < 0.08) abilityPlan(w, u, 'fight', creep);
     u.order = { kind: 'attack', id: creep.id };
-    return;
-  }
-
-  // Hit structures when minions are tanking (or nobody defends).
-  const structure = w.units.find((s) => (s.kind === 'tower' || s.kind === 'nexus') && w.attackable(u, s) && dist(s, u) < 750 && !towerDanger(w, u, s));
-  if (structure) {
-    u.order = { kind: 'attack', id: structure.id };
     return;
   }
 
@@ -146,9 +175,10 @@ export function thinkHero(w: World, u: Unit) {
     const towers = w.units.filter((t) => t.kind === 'tower' && !t.dead && t.team === u.team);
     frontX = towers.length ? (dir === 1 ? Math.max(...towers.map((t) => t.x)) : Math.min(...towers.map((t) => t.x))) + dir * 120 : fountain.x + dir * 400;
   }
-  let x = frontX - dir * (u.stats.attackRange > 200 ? 260 : 120);
+  const back = d === 'push' ? -60 : d === 'farm' ? 380 : u.stats.attackRange > 200 ? 260 : 120;
+  let x = frontX - dir * back;
   const y = LANE_Y + h.laneOffset;
-  while (towerDanger(w, u, { x, y }) && Math.abs(x - fountain.x) > 200) x -= dir * 100;
+  if (d !== 'push') while (towerDanger(w, u, { x, y }) && Math.abs(x - fountain.x) > 200) x -= dir * 100;
   x = Math.max(60, Math.min(MAP_W - 60, x));
   u.order = { kind: 'move', x, y };
 }

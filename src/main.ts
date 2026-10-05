@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import { ArenaScene } from './game/ArenaScene';
-import { buildRoster, randomPicks, rollDraft, type Picks } from './sim/draft';
+import { buildBotRoster, buildRoster, randomPicks, rollDraft, type Picks } from './sim/draft';
 import { HEROES, type HeroDef } from './sim/heroes';
 import { Rng } from './sim/rng';
 import { RARITIES, SLOTS, type Team, type Unit } from './sim/types';
@@ -9,6 +9,7 @@ import { World } from './sim/world';
 import { el } from './ui/dom';
 import { showDraft } from './ui/draftScreen';
 import { Hud } from './ui/hud';
+import { ManagerHud } from './ui/managerHud';
 import { renderMenu, type Settings } from './ui/menu';
 import { createJoystick, isTouchDevice } from './ui/touch';
 
@@ -19,7 +20,66 @@ if (isTouchDevice()) document.body.classList.add('touch');
 let game: Phaser.Game | null = null;
 
 function menu() {
-  renderMenu(ui, (settings) => startDraft(settings));
+  renderMenu(ui, (settings) => (settings.mode === 'manage' ? startManager(settings) : startDraft(settings)));
+}
+
+function createGame(scene: ArenaScene) {
+  game = new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: 'game',
+    backgroundColor: '#0c140f',
+    scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight },
+    input: { activePointers: 3 },
+    scene,
+    banner: false,
+  });
+}
+
+/** Spectator mode: 10 bots, you give orders and pick boons for the managed ones. */
+function startManager(settings: Settings) {
+  const seed = Number(params.get('seed')) || Math.floor(Math.random() * 2 ** 31);
+  const rng = new Rng(seed);
+  const world = new World({ boonEveryLevels: settings.boonEveryLevels, seed });
+  const managed = { blue: true, red: settings.manageTeams === 'both' };
+  for (const s of buildBotRoster(rng, settings.teamSize, managed)) world.addHero(s);
+
+  let ended = false;
+  const quit = () => {
+    hud.destroy();
+    end?.remove();
+    game?.destroy(true);
+    game = null;
+    menu();
+  };
+  let end: HTMLElement | null = null;
+  const hud = new ManagerHud(ui, world, quit);
+  const scene = new ArenaScene(world, null, {
+    onEvents: (events) => {
+      hud.onEvents(events);
+      const e = events.find((x) => x.type === 'end');
+      if (e && e.type === 'end' && !ended) {
+        ended = true;
+        end = el('div.screen.overlay', {}, [
+          el('div.endbox.panel', {}, [
+            el(`h1.title.${e.winner === 'blue' ? 'win' : 'lose'}`, { text: `${e.winner === 'blue' ? 'Blue' : 'Red'} wins` }),
+            el('p.summary', { text: `${Math.floor(world.time / 60)} min · kills ${world.kills.blue} – ${world.kills.red}` }),
+            el('button.btn-primary', { onclick: quit }, ['Back to menu']),
+          ]),
+        ]);
+        setTimeout(() => end && ui.append(end), 1200);
+      }
+    },
+    onFrame: (dt) => hud.update(dt),
+    onBoonKey: (i) => hud.pickBoon(i),
+    onToggleScoreboard: () => {},
+    onPause: () => hud.togglePause(),
+    isPaused: () => hud.paused,
+    speed: () => hud.speed,
+    selected: () => hud.selected,
+    onSelect: (u) => hud.select(u),
+  });
+  createGame(scene);
+  (window as unknown as { __match: unknown }).__match = { world, hud };
 }
 
 function startDraft(settings: Settings) {
@@ -76,15 +136,7 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
     isPaused: () => paused,
   });
 
-  game = new Phaser.Game({
-    type: Phaser.AUTO,
-    parent: 'game',
-    backgroundColor: '#0c140f',
-    scale: { mode: Phaser.Scale.RESIZE, width: window.innerWidth, height: window.innerHeight },
-    input: { activePointers: 3 },
-    scene,
-    banner: false,
-  });
+  createGame(scene);
 
   const teardown = () => {
     hud.destroy();

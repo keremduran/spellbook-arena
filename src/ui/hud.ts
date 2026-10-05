@@ -1,6 +1,6 @@
 import { autoAim } from '../game/aim';
 import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
-import { RARITIES, SLOTS, type GameEvent, type Slot, type Unit } from '../sim/types';
+import { RARITIES, SLOTS, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
 import { clear, el } from './dom';
 
@@ -181,24 +181,46 @@ export class Hud {
   }
 
   private drawMinimap() {
-    const c = this.minimap.getContext('2d');
-    if (!c) return;
-    const sx = this.minimap.width / MAP_W;
-    const sy = this.minimap.height / MAP_H;
-    c.fillStyle = '#0c140f';
-    c.fillRect(0, 0, this.minimap.width, this.minimap.height);
-    c.fillStyle = '#223828';
-    c.fillRect(0, 360 * sy, this.minimap.width, 380 * sy);
-    for (const u of this.world.units) {
-      if (u.dead) continue;
-      if (u.team !== this.player.team && !this.world.isVisible(u, this.player.team)) continue;
-      const col = u.team === 'blue' ? '#4fa3ff' : '#ff5a5a';
-      const r = u.kind === 'hero' ? 6 : u.kind === 'creep' ? 2.5 : 7;
-      c.fillStyle = u === this.player ? '#ffe082' : col;
-      c.beginPath();
-      if (u.kind === 'tower' || u.kind === 'nexus') c.rect(u.x * sx - r, u.y * sy - r, r * 2, r * 2);
-      else c.arc(u.x * sx, u.y * sy, r, 0, Math.PI * 2);
-      c.fill();
+    drawMinimap(this.minimap, this.world, this.player.team);
+  }
+}
+
+/** Draws the whole lane; `view` hides enemies that are invisible to that team (null = see everything). */
+export function drawMinimap(canvas: HTMLCanvasElement, world: World, view: Team | null, selected?: Unit | null) {
+  const c = canvas.getContext('2d');
+  if (!c) return;
+  const sx = canvas.width / MAP_W;
+  const sy = canvas.height / MAP_H;
+  c.fillStyle = '#0c140f';
+  c.fillRect(0, 0, canvas.width, canvas.height);
+  c.fillStyle = '#223828';
+  c.fillRect(0, 360 * sy, canvas.width, 380 * sy);
+  for (const u of world.units) {
+    if (u.dead) continue;
+    if (view && u.team !== view && !world.isVisible(u, view)) continue;
+    const col = u.team === 'blue' ? '#4fa3ff' : '#ff5a5a';
+    const r = u.kind === 'hero' ? 6 : u.kind === 'creep' ? 2.5 : 7;
+    c.fillStyle = u.hero?.isPlayer || u === selected ? '#ffe082' : col;
+    c.beginPath();
+    if (u.kind === 'tower' || u.kind === 'nexus') c.rect(u.x * sx - r, u.y * sy - r, r * 2, r * 2);
+    else c.arc(u.x * sx, u.y * sy, r, 0, Math.PI * 2);
+    c.fill();
+  }
+}
+
+/** Adds a line to a kill feed element and trims it. */
+export function pushFeed(feed: HTMLElement, events: GameEvent[], viewTeam: Team) {
+  for (const e of events) {
+    let line: HTMLElement | null = null;
+    if (e.type === 'kill') {
+      line = el('div', {}, [el(`span.${e.killerTeam}`, { text: e.killer ?? '?' }), ' ⚔ ', el(`span.${e.victimTeam}`, { text: e.victim })]);
+    } else if (e.type === 'structure') {
+      line = el('div', {}, [el(`span.${e.team}`, { text: e.team === viewTeam ? 'Blue' : 'Red' }), ` ${e.kind} destroyed!`]);
     }
+    if (!line) continue;
+    feed.prepend(line);
+    while (feed.children.length > 5) feed.lastChild?.remove();
+    const l = line;
+    setTimeout(() => l.remove(), 6000);
   }
 }

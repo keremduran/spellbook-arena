@@ -74,12 +74,21 @@ export interface BoonInst {
   rarity: Rarity;
 }
 
+/** Orders the bot manager can give a bot. */
+export type Directive = 'auto' | 'push' | 'farm' | 'group' | 'retreat';
+export const DIRECTIVES: Directive[] = ['auto', 'push', 'farm', 'group', 'retreat'];
+
 export type Order = { kind: 'idle' } | { kind: 'move'; x: number; y: number } | { kind: 'attack'; id: number };
 
 export interface HeroState {
   def: HeroDef;
   name: string;
   isPlayer: boolean;
+  /** Boon choices wait for the user instead of being auto-picked. */
+  managed: boolean;
+  directive: Directive;
+  /** Enemy hero this bot was told to focus. */
+  focusId?: number;
   level: number;
   xp: number;
   kills: number;

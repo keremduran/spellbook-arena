@@ -69,3 +69,16 @@ export function buildRoster(rng: Rng, teamSize: number, player: { def: HeroDef; 
   }
   return setups;
 }
+
+/** All-bot roster for spectator mode. Managed teams leave boon choices to the user. */
+export function buildBotRoster(rng: Rng, teamSize: number, managed: Record<Team, boolean>): HeroSetup[] {
+  const setups: HeroSetup[] = [];
+  const names = rng.sample(BOT_NAMES, BOT_NAMES.length);
+  for (const team of ['blue', 'red'] as Team[]) {
+    const pool = rng.sample(HEROES, HEROES.length);
+    for (let i = 0; i < teamSize; i++) {
+      setups.push({ def: pool[i % pool.length], team, name: names.pop() ?? `Bot ${i}`, managed: managed[team], picks: botPicks(rollDraft(rng), rng) });
+    }
+  }
+  return setups;
+}

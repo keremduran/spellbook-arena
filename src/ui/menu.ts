@@ -1,6 +1,9 @@
 import { el } from './dom';
 
 export interface Settings {
+  mode: 'play' | 'manage';
+  /** In manager mode: whose boons the user picks. */
+  manageTeams: 'blue' | 'both';
   teamSize: number;
   boonEveryLevels: number;
   name: string;
@@ -9,7 +12,7 @@ export interface Settings {
 const KEY = 'spellbook-settings';
 
 export function loadSettings(): Settings {
-  const fallback: Settings = { teamSize: 5, boonEveryLevels: 2, name: 'You' };
+  const fallback: Settings = { mode: 'play', manageTeams: 'blue', teamSize: 5, boonEveryLevels: 2, name: 'You' };
   try {
     return { ...fallback, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
   } catch {
@@ -47,6 +50,14 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
       el('h1.title', { text: 'Spellbook Arena' }),
       el('p.tag', { text: 'Random hero. Draft any spell for every key. Fight in a single-lane brawl and stack Hades-style boons.' }),
       el('div.panel', {}, [
+        el('div.setting', {}, [
+          el('label', { text: 'Mode' }),
+          seg<Settings['mode']>([['play', '🎮 Play'], ['manage', '🧠 Watch & manage bots']], s.mode, (v) => (s.mode = v)),
+        ]),
+        el('div.setting', {}, [
+          el('label', { text: 'You pick boons for' }),
+          seg<Settings['manageTeams']>([['blue', 'Blue bots'], ['both', 'Every bot']], s.manageTeams, (v) => (s.manageTeams = v)),
+        ]),
         el('div.setting', {}, [el('label', { text: 'Your name' }), name]),
         el('div.setting', {}, [
           el('label', { text: 'Team size' }),
@@ -63,12 +74,13 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
           saveSettings(s);
           screen.remove();
           onPlay(s);
-        } }, ['Draft & Play']),
+        } }, ['Start']),
       ]),
       el('div.how.panel', { style: 'margin-top:22px' }, [
         el('div', { html: '<b>Draft:</b> you get a random hero and 60 seconds to pick 1 of 4 random options for your Passive, Q, W, E and R. Options roll rarities from Common to Legendary, so your build can be trash or totally broken.' }),
         el('div', { html: '<b>Desktop:</b> click to move / attack (hold to keep moving), <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> cast towards the mouse, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick boons, <kbd>S</kbd> stop, hold <kbd>Tab</kbd> for the scoreboard, <kbd>Esc</kbd> pause.' }),
         el('div', { html: '<b>Mobile:</b> joystick or tap to move, ability buttons auto-aim at the nearest enemy. Play in landscape.' }),
+        el('div', { html: '<b>Watch &amp; manage:</b> all 10 heroes are bots. Click a bot (or its row) to follow it and give it orders: Push, Farm, Group, Retreat, or focus an enemy. Team buttons order everyone at once. You choose the boons for the bots you manage. Drag or use WASD/arrows to move the camera, scroll to zoom, change speed at the top, <kbd>Space</kbd> pauses.' }),
         el('div', { html: '<b>Goal:</b> destroy the enemy towers, then their nexus. Your fountain heals you; theirs will melt you.' }),
       ]),
     ]),

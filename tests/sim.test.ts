@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ABILITIES, BASIC_POOL, PASSIVE_POOL, ULT_POOL } from '../src/sim/abilities';
 import { STEP } from '../src/sim/constants';
-import { botPicks, buildRoster, rollDraft } from '../src/sim/draft';
+import { botPicks, buildBotRoster, buildRoster, rollDraft } from '../src/sim/draft';
 import { HEROES } from '../src/sim/heroes';
 import { Rng } from '../src/sim/rng';
 import { SLOTS, type Rarity } from '../src/sim/types';
@@ -78,5 +78,58 @@ describe('full bot matches', () => {
   it('1v1 match ends', () => {
     const w = botMatch(7, 1);
     expect(w.winner).not.toBeNull();
+  });
+});
+
+describe('bot manager', () => {
+  const setup = (seed: number) => {
+    const rng = new Rng(seed);
+    const world = new World({ boonEveryLevels: 2, seed });
+    for (const s of buildBotRoster(rng, 5, { blue: true, red: false })) world.addHero(s);
+    return world;
+  };
+  const run = (w: World, seconds: number) => {
+    for (let i = 0; i < seconds * 30 && !w.winner; i++) {
+      w.update(STEP);
+      w.events.length = 0;
+    }
+  };
+
+  it('managed bots wait for the user to pick their boons', () => {
+    const w = setup(11);
+    run(w, 300);
+    const blue = w.heroList.filter((h) => h.team === 'blue');
+    const red = w.heroList.filter((h) => h.team === 'red');
+    expect(blue.every((h) => h.hero!.boons.length === 0)).toBe(true);
+    expect(blue.some((h) => h.hero!.offers.length > 0)).toBe(true);
+    expect(red.some((h) => h.hero!.boons.length > 0)).toBe(true);
+    const first = blue.find((h) => h.hero!.offers.length)!;
+    w.pickBoon(first, 2);
+    expect(first.hero!.boons).toHaveLength(1);
+  });
+
+  it('a team told to push beats a team told to retreat', () => {
+    const w = setup(12);
+    for (const h of w.heroList) h.hero!.directive = h.team === 'blue' ? 'push' : 'retreat';
+    run(w, 20 * 60);
+    expect(w.winner).toBe('blue');
+  });
+
+  it('focused enemy gets attacked', () => {
+    const w = setup(13);
+    run(w, 60);
+    const target = w.heroList.find((h) => h.team === 'red' && !h.dead)!;
+    for (const h of w.heroList) if (h.team === 'blue') h.hero!.focusId = target.id;
+    target.x = 1700;
+    target.y = 550;
+    target.stunUntil = w.time + 5;
+    for (const h of w.heroList) if (h.team === 'blue') { h.x = 1900; h.y = 550; }
+    let most = 0;
+    for (let i = 0; i < 30 && !target.dead; i++) {
+      w.update(STEP);
+      const chasing = w.heroList.filter((h) => h.team === 'blue' && h.order.kind === 'attack' && h.order.id === target.id);
+      most = Math.max(most, chasing.length);
+    }
+    expect(most).toBeGreaterThanOrEqual(3);
   });
 });

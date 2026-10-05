@@ -24,6 +24,7 @@ export interface HeroSetup {
   team: Team;
   name: string;
   isPlayer?: boolean;
+  managed?: boolean;
   picks: Partial<Record<Slot, { def: AbilityDef; rarity: Rarity }>>;
 }
 
@@ -88,7 +89,7 @@ export class World {
       if (pick) abilities[slot as Slot] = { def: pick.def, rarity: pick.rarity, readyAt: 0 };
     }
     u.hero = {
-      def: setup.def, name: setup.name, isPlayer: !!setup.isPlayer, level: 1, xp: 0, kills: 0, deaths: 0, assists: 0,
+      def: setup.def, name: setup.name, isPlayer: !!setup.isPlayer, managed: !!setup.managed, directive: 'auto', level: 1, xp: 0, kills: 0, deaths: 0, assists: 0,
       respawnAt: 0, abilities, boons: [], offers: [], attackCount: 0, lastCombatAt: -99, moveDir: null,
       retreating: false, nextThink: 0, laneOffset: this.rng.range(-170, 170),
     };
@@ -468,7 +469,7 @@ export class World {
   offerBoon(u: Unit) {
     const h = u.hero!;
     h.offers.push(rollBoonOffer(this.rng));
-    if (h.isPlayer) this.events.push({ type: 'offer', unitId: u.id });
+    if (h.isPlayer || h.managed) this.events.push({ type: 'offer', unitId: u.id });
     else this.pickBoon(u, bestBoonIndex(h.offers[0]));
   }
 

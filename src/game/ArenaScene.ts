@@ -15,6 +15,11 @@ export interface SceneHooks {
   onToggleScoreboard: (show: boolean) => void;
   onPause: () => void;
   isPaused: () => boolean;
+  /** Spectator mode: simulation speed multiplier. */
+  speed?: () => number;
+  /** Spectator mode: currently selected hero (camera follows it). */
+  selected?: () => Unit | null;
+  onSelect?: (u: Unit | null) => void;
 }
 
 interface FloatText {
@@ -24,6 +29,11 @@ interface FloatText {
   born: number;
 }
 
+const PAN_KEYS: Record<string, [number, number]> = {
+  arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1], a: [-1, 0], d: [1, 0], w: [0, -1], s: [0, 1],
+};
+
+/** Renders the world. With a player it handles move/attack/cast input; without one it's a spectator camera. */
 export class ArenaScene extends Phaser.Scene {
   private g!: Phaser.GameObjects.Graphics;
   private labels = new Map<number, { icon: Phaser.GameObjects.Text; name: Phaser.GameObjects.Text }>();
@@ -31,8 +41,13 @@ export class ArenaScene extends Phaser.Scene {
   private acc = 0;
   private mouse = { x: 0, y: 0 };
   private rightDown = false;
+  private baseZoom = 1;
+  private zoomMul = 1;
+  private drag: { x: number; y: number; moved: boolean } | null = null;
+  private camPos = { x: MAP_W / 2, y: LANE_Y };
+  private held = new Set<string>();
 
-  constructor(private world: World, private player: Unit, private hooks: SceneHooks) {
+  constructor(private world: World, private player: Unit | null, private hooks: SceneHooks) {
     super('arena');
   }
 
@@ -52,6 +67,10 @@ export class ArenaScene extends Phaser.Scene {
 
     this.input.mouse?.disableContextMenu();
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (!this.player) {
+        this.drag = { x: p.x, y: p.y, moved: false };
+        return;
+      }
       if (this.hooks.isPaused()) return;
       this.rightDown = true;
       this.command(p);
@@ -59,9 +78,37 @@ export class ArenaScene extends Phaser.Scene {
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       const wp = this.cameras.main.getWorldPoint(p.x, p.y);
       this.mouse = { x: wp.x, y: wp.y };
+      if (!this.player) {
+        if (this.drag && p.isDown) {
+          const dx = p.x - this.drag.x;
+          const dy = p.y - this.drag.y;
+          if (this.drag.moved || Math.hypot(dx, dy) > 8) {
+            if (!this.drag.moved) this.hooks.onSelect?.(null);
+            this.drag.moved = true;
+            const z = this.cameras.main.zoom;
+            this.camPos.x -= dx / z;
+            this.camPos.y -= dy / z;
+            this.drag.x = p.x;
+            this.drag.y = p.y;
+          }
+        }
+        return;
+      }
       if (this.rightDown && p.isDown && !p.wasTouch) this.command(p, true);
     });
-    this.input.on('pointerup', () => (this.rightDown = false));
+    this.input.on('pointerup', (p: Phaser.Input.Pointer) => {
+      this.rightDown = false;
+      if (!this.player && this.drag && !this.drag.moved) {
+        const wp = this.cameras.main.getWorldPoint(p.x, p.y);
+        const hit = this.world.heroList.find((h) => !h.dead && Math.hypot(h.x - wp.x, h.y - wp.y) < h.radius + 22);
+        this.hooks.onSelect?.(hit ?? null);
+      }
+      this.drag = null;
+    });
+    this.input.on('wheel', (_p: unknown, _o: unknown, _dx: number, dy: number) => {
+      this.zoomMul = Math.max(0.45, Math.min(2.2, this.zoomMul * (dy > 0 ? 0.9 : 1.1)));
+      this.cameras.main.setZoom(this.baseZoom * this.zoomMul);
+    });
 
     const kb = this.input.keyboard!;
     kb.addCapture('TAB');
@@ -69,6 +116,15 @@ export class ArenaScene extends Phaser.Scene {
       const k = e.key.toLowerCase();
       if (k === 'escape') return this.hooks.onPause();
       if (k === 'tab') return this.hooks.onToggleScoreboard(true);
+      if (!this.player) {
+        if (PAN_KEYS[k]) {
+          this.held.add(k);
+          this.hooks.onSelect?.(null);
+        }
+        if (k === ' ') this.hooks.onPause();
+        if (k === '1' || k === '2' || k === '3') this.hooks.onBoonKey(Number(k) - 1);
+        return;
+      }
       if (this.hooks.isPaused()) return;
       if (KEY_SLOTS[k]) this.world.castAbility(this.player, KEY_SLOTS[k], this.mouse);
       if (k === '1' || k === '2' || k === '3') this.hooks.onBoonKey(Number(k) - 1);
@@ -76,6 +132,7 @@ export class ArenaScene extends Phaser.Scene {
     });
     kb.on('keyup', (e: KeyboardEvent) => {
       if (e.key === 'Tab') this.hooks.onToggleScoreboard(false);
+      this.held.delete(e.key.toLowerCase());
     });
   }
 
@@ -84,7 +141,7 @@ export class ArenaScene extends Phaser.Scene {
     const wp = this.cameras.main.getWorldPoint(p.x, p.y);
     this.mouse = { x: wp.x, y: wp.y };
     const u = this.player;
-    if (u.dead) return;
+    if (!u || u.dead) return;
     const target = this.world.units.find((t) => t.team !== u.team && !t.dead && this.world.isVisible(t, u.team) && Math.hypot(t.x - wp.x, t.y - wp.y) < t.radius + 18);
     if (target) {
       u.order = { kind: 'attack', id: target.id };
@@ -98,27 +155,45 @@ export class ArenaScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const { width, height } = this.scale.gameSize;
     const touch = window.matchMedia('(pointer: coarse)').matches;
-    const zoom = Math.min(width / (touch ? 1250 : 1600), height / (touch ? 720 : 900));
-    cam.setZoom(zoom);
+    const span = this.player ? (touch ? 1250 : 1600) : 2000;
+    this.baseZoom = Math.min(width / span, height / (span * 0.5625));
+    cam.setZoom(this.baseZoom * this.zoomMul);
     cam.setBounds(0, 0, MAP_W, MAP_H);
   }
 
   update(_time: number, deltaMs: number) {
     const dt = Math.min(deltaMs / 1000, 0.1);
     if (!this.hooks.isPaused() && !this.world.winner) {
-      this.acc += dt;
-      while (this.acc >= STEP) {
+      this.acc += dt * (this.hooks.speed?.() ?? 1);
+      let steps = 0;
+      while (this.acc >= STEP && steps < 16) {
         this.world.update(STEP);
         this.acc -= STEP;
+        steps++;
       }
+      if (steps >= 16) this.acc = 0;
     }
     if (this.world.events.length) {
       const events = this.world.events.splice(0);
       for (const e of events) if (e.type === 'damage') this.spawnFloat(e);
       this.hooks.onEvents(events);
     }
-    const focus = this.player.dead ? FOUNTAIN[this.player.team] : this.player;
     const cam = this.cameras.main;
+    let focus: { x: number; y: number };
+    if (this.player) {
+      focus = this.player.dead ? FOUNTAIN[this.player.team] : this.player;
+    } else {
+      const sel = this.hooks.selected?.();
+      if (sel) this.camPos = sel.dead ? { ...FOUNTAIN[sel.team] } : { x: sel.x, y: sel.y };
+      for (const k of this.held) {
+        const [px, py] = PAN_KEYS[k];
+        this.camPos.x += (px * 900 * dt) / cam.zoom;
+        this.camPos.y += (py * 900 * dt) / cam.zoom;
+      }
+      this.camPos.x = Math.max(0, Math.min(MAP_W, this.camPos.x));
+      this.camPos.y = Math.max(0, Math.min(MAP_H, this.camPos.y));
+      focus = this.camPos;
+    }
     const cx = cam.midPoint.x + (focus.x - cam.midPoint.x) * Math.min(1, dt * 8);
     const cy = cam.midPoint.y + (focus.y - cam.midPoint.y) * Math.min(1, dt * 8);
     cam.centerOn(cx, cy);
@@ -170,6 +245,8 @@ export class ArenaScene extends Phaser.Scene {
     const g = this.g;
     const t = w.time;
     const me = this.player;
+    const view = me?.team ?? 'blue';
+    const sel = this.hooks.selected?.() ?? null;
     g.clear();
 
     for (const z of w.zones) {
@@ -190,7 +267,7 @@ export class ArenaScene extends Phaser.Scene {
       const tc = TEAM_COLOR[u.team];
       if (u.kind === 'tower') {
         const prot = w.isProtected(u);
-        if (Math.hypot(me.x - u.x, me.y - u.y) < u.stats.attackRange + 250 && u.team !== me.team) {
+        if (me && Math.hypot(me.x - u.x, me.y - u.y) < u.stats.attackRange + 250 && u.team !== me.team) {
           g.lineStyle(2, 0xff5252, 0.25).strokeCircle(u.x, u.y, u.stats.attackRange);
         }
         g.fillStyle(0x263238).fillRoundedRect(u.x - 40, u.y - 40, 80, 80, 14);
@@ -213,13 +290,13 @@ export class ArenaScene extends Phaser.Scene {
         g.fillStyle(tc, 0.95).fillCircle(u.x, u.y, u.radius);
         g.fillStyle(0xffffff, 0.25).fillCircle(u.x - 4, u.y - 4, u.radius * 0.45);
         if (u.creep?.ranged) g.lineStyle(2, 0xffffff, 0.6).strokeCircle(u.x, u.y, u.radius - 4);
-        if (u.hp < u.stats.maxHp) this.hpBar(u.x, u.y - u.radius - 9, 34, 4, u.hp / u.stats.maxHp, u.team === me.team ? 0x81c784 : 0xe57373);
+        if (u.hp < u.stats.maxHp) this.hpBar(u.x, u.y - u.radius - 9, 34, 4, u.hp / u.stats.maxHp, u.team === view ? 0x81c784 : 0xe57373);
       }
     }
 
     for (const u of w.heroList) {
       const lab = this.labels.get(u.id)!;
-      const hidden = u.dead || (u.team !== me.team && !w.isVisible(u, me.team));
+      const hidden = u.dead || (!!me && u.team !== me.team && !w.isVisible(u, me.team));
       lab.icon.setVisible(!hidden);
       lab.name.setVisible(!hidden);
       if (hidden) continue;
@@ -229,7 +306,8 @@ export class ArenaScene extends Phaser.Scene {
       g.fillStyle(0x000000, 0.35).fillCircle(u.x + 4, u.y + 5, u.radius);
       g.fillStyle(tc, alpha).fillCircle(u.x, u.y, u.radius);
       g.fillStyle(hex(h.def.color), alpha).fillCircle(u.x, u.y, u.radius * 0.72);
-      if (h.isPlayer) g.lineStyle(3, 0xffe082, 1).strokeCircle(u.x, u.y, u.radius + 4);
+      if (h.isPlayer || u === sel) g.lineStyle(3, 0xffe082, 1).strokeCircle(u.x, u.y, u.radius + 4);
+      if (!me && h.offers.length && h.managed) g.fillStyle(0xffca28, 0.9 + 0.1 * Math.sin(t * 6)).fillCircle(u.x + u.radius, u.y - u.radius, 7);
       if (u.invulnUntil > t) g.lineStyle(4, 0xffe082, 0.9).strokeCircle(u.x, u.y, u.radius + 10);
       if (u.shield > 0) g.lineStyle(3, 0xffffff, 0.8).strokeCircle(u.x, u.y, u.radius + 7);
       if (u.stunUntil > t) {
@@ -239,7 +317,7 @@ export class ArenaScene extends Phaser.Scene {
         }
       }
       if (u.slowUntil > t) g.lineStyle(2, 0x80deea, 0.8).strokeCircle(u.x, u.y, u.radius + 2);
-      const barColor = h.isPlayer ? 0x66bb6a : u.team === me.team ? 0x42a5f5 : 0xef5350;
+      const barColor = h.isPlayer ? 0x66bb6a : u.team === view ? 0x42a5f5 : 0xef5350;
       this.hpBar(u.x, u.y - u.radius - 16, 64, 8, u.hp / u.stats.maxHp, barColor, u.shield / u.stats.maxHp);
       lab.icon.setPosition(u.x, u.y).setAlpha(alpha).setFontSize(Math.round(u.radius * 1.1));
       lab.name.setPosition(u.x, u.y - u.radius - 19).setText(`${h.level} ${h.name}`).setAlpha(alpha);
@@ -260,7 +338,7 @@ export class ArenaScene extends Phaser.Scene {
     }
 
     // Aim preview for the player's abilities while hovering.
-    if (!me.dead && !this.input.activePointer.wasTouch) {
+    if (me && !me.dead && !this.input.activePointer.wasTouch) {
       g.lineStyle(1, 0xffffff, 0.12).lineBetween(me.x, me.y, this.mouse.x, this.mouse.y);
     }
 
@@ -277,8 +355,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private spawnFloat(e: Extract<GameEvent, { type: 'damage' }>) {
-    const me = this.player.id;
-    if (e.srcId !== me && e.tgtId !== me) return;
+    const me = this.player?.id ?? this.hooks.selected?.()?.id;
+    if (me === undefined || (e.srcId !== me && e.tgtId !== me)) return;
     if (this.floats.length > 40) return;
     const amount = Math.round(e.amount);
     if (amount < 1) return;

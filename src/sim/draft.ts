@@ -14,20 +14,23 @@ export type Draft = Record<Slot, DraftOption[]>;
 export type Picks = Record<Slot, DraftOption>;
 
 export const OPTIONS_PER_SLOT = 4;
+const TANK_WEIGHT = 1.8;
 
 /**
  * Four truly random options per key. Q/W/E draw from the basic pool (no repeats across keys),
  * R from ultimates, P from passives. Each option rolls its own rarity.
  */
 export function rollDraft(rng: Rng): Draft {
-  const basics = rng.sample(BASIC_POOL, OPTIONS_PER_SLOT * 3);
+  // Tank skills are weighted up so a tanky build is a real option most drafts.
+  const w = (d: AbilityDef) => (d.tags.includes('tank') ? TANK_WEIGHT : 1);
+  const basics = rng.weightedSample(BASIC_POOL, OPTIONS_PER_SLOT * 3, w);
   const opt = (def: AbilityDef): DraftOption => ({ def, rarity: rollRarity(rng) });
   return {
-    P: rng.sample(PASSIVE_POOL, OPTIONS_PER_SLOT).map(opt),
+    P: rng.weightedSample(PASSIVE_POOL, OPTIONS_PER_SLOT, w).map(opt),
     Q: basics.slice(0, 4).map(opt),
     W: basics.slice(4, 8).map(opt),
     E: basics.slice(8, 12).map(opt),
-    R: rng.sample(ULT_POOL, OPTIONS_PER_SLOT).map(opt),
+    R: rng.weightedSample(ULT_POOL, OPTIONS_PER_SLOT, w).map(opt),
   };
 }
 

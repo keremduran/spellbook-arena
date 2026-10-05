@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ABILITIES, BASIC_POOL, PASSIVE_POOL, ULT_POOL } from '../src/sim/abilities';
 import { STEP } from '../src/sim/constants';
 import { botPicks, buildBotRoster, buildRoster, rollDraft } from '../src/sim/draft';
-import { EFFECT_BOONS } from '../src/sim/boons';
+import { BOONS, EFFECT_BOONS } from '../src/sim/boons';
 import { HEROES } from '../src/sim/heroes';
 import { Rng } from '../src/sim/rng';
 import { SLOTS, type Rarity, type Unit } from '../src/sim/types';
@@ -298,5 +298,66 @@ describe('takedown boons and max level', () => {
     const { w, me } = arena();
     w.gainXp(me, 1e7);
     expect(me.hero!.level).toBe(21);
+  });
+});
+
+describe('tank mechanics and stacking', () => {
+  const solo = () => {
+    const w = new World({ boonEveryLevels: 0, seed: 41 });
+    w.rune.nextAt = 9999;
+    const me = w.addHero({ def: HEROES[0], team: 'blue', name: 'me', isPlayer: true, picks: {} });
+    const foe = w.addHero({ def: HEROES[1], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    return { w, me, foe };
+  };
+  const grant = (w: World, u: Unit, id: string, rarity: Rarity = 'common') => {
+    u.hero!.offers.push([{ def: BOONS.find((b) => b.id === id)!, rarity }]);
+    w.pickBoon(u, 0);
+  };
+
+  it('shields stack instead of replacing each other', () => {
+    const { w, me } = solo();
+    w.shield(me, 200, 3);
+    w.shield(me, 150, 2);
+    expect(me.shield).toBe(350);
+  });
+
+  it('a shorter invulnerability does not cut a longer one short', () => {
+    const { w, me } = solo();
+    w.invuln(me, 2.5);
+    w.invuln(me, 1);
+    expect(me.invulnUntil).toBeCloseTo(w.time + 2.5);
+  });
+
+  it('Grit heals back part of the damage taken', () => {
+    const { w, me, foe } = solo();
+    grant(w, me, 'grit', 'legendary');
+    me.hp = me.stats.maxHp;
+    w.damage(foe, me, 400, 'true');
+    const hurt = me.hp;
+    for (let i = 0; i < 30 * 3; i++) w.update(STEP);
+    expect(me.hp).toBeGreaterThan(hurt + 400 * 0.25 * 0.9);
+  });
+
+  it('boon cards preview the stat change, and stacking effects say so', () => {
+    const { w, me } = solo();
+    const vit = { def: BOONS.find((b) => b.id === 'vitality')!, rarity: 'common' as Rarity };
+    const lines = w.previewBoon(me, vit);
+    expect(lines[0]).toMatch(/^Max health: \d+ → \d+$/);
+    grant(w, me, 'burn');
+    const burn = w.previewBoon(me, { def: BOONS.find((b) => b.id === 'burn')!, rarity: 'rare' });
+    expect(burn[0]).toContain('Stacks with your copy');
+  });
+
+  it('bots attack the nexus once the enemy has no towers', () => {
+    const rng = new Rng(77);
+    const w = new World({ boonEveryLevels: 3, seed: 77 });
+    for (const s of buildBotRoster(rng, 3, { blue: false, red: false })) w.addHero(s);
+    w.rune.nextAt = 9999;
+    for (const t of w.units) if (t.kind === 'tower' && t.team === 'red') t.dead = true;
+    // Red heroes are away (dead for a long time), so blue's choice is only about the nexus.
+    for (const h of w.heroList) if (h.team === 'red') { h.dead = true; h.hero!.respawnAt = 9999; }
+    for (let i = 0; i < 30 * 30 && !w.winner; i++) w.update(STEP);
+    const nexus = w.units.find((u) => u.kind === 'nexus' && u.team === 'red');
+    expect(w.winner === 'blue' || (nexus && nexus.hp < nexus.stats.maxHp)).toBe(true);
   });
 });

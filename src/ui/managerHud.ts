@@ -305,7 +305,7 @@ export class ManagerHud {
         el('button.dir', { title: 'Let this bot take its best option', onclick: () => this.letBotPick(u) }, ['🤖 Let bot pick']),
       ]),
       tabs,
-      boonCards(h.offers[0], (i) => this.pickBoon(i)),
+      boonCards(h.offers[0], (i) => this.pickBoon(i), (b) => this.world.previewBoon(u, b)),
     );
   }
 }

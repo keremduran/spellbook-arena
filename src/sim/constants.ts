@@ -26,13 +26,13 @@ export const mirrorX = (team: Team, x: number) => (team === 'blue' ? x : MAP_W -
 export const laneDir = (team: Team) => (team === 'blue' ? 1 : -1);
 
 export const FIRST_WAVE = 8;
-/** 21s / 1.2: waves arrive 20% more often. */
-export const WAVE_INTERVAL = 17.5;
+export const WAVE_INTERVAL = 15;
 export const RANGED_THRESHOLD = 200;
 
 /** Slower curve so the extra levels (max 21) arrive late in the match. */
 export const xpToNext = (level: number) => 160 + 75 * level;
-export const respawnTime = (level: number) => 3 + 1.1 * level;
+/** 15% shorter than the v3.4 timer (3 + 1.1 per level). */
+export const respawnTime = (level: number) => 0.85 * (3 + 1.1 * level);
 
 /** Mid-lane power rune: grabbing it grants a Rare-or-better boon choice. */
 export const RUNE_FIRST = 45;

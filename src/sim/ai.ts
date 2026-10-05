@@ -127,6 +127,14 @@ export function thinkHero(w: World, u: Unit) {
     }
   }
 
+  // No enemy towers left: go end the game on their nexus.
+  const towersLeft = w.units.some((t) => t.kind === 'tower' && !t.dead && t.team !== u.team);
+  const nexus = w.units.find((t) => t.kind === 'nexus' && !t.dead && t.team !== u.team);
+  if (!towersLeft && nexus && hpPct > 0.4 && d !== 'farm') {
+    u.order = { kind: 'attack', id: nexus.id };
+    return;
+  }
+
   // Contest the power rune when it's up and we're healthy enough.
   const rune = w.rune;
   if (rune.active && d !== 'farm' && hpPct > 0.4 && dist(u, rune) < 1300) {

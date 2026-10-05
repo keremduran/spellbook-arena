@@ -10,7 +10,7 @@ import { heroBaseStats, levelScale, type HeroDef } from './heroes';
 import { Rng } from './rng';
 import {
   RARITIES, STAT_KEYS, emptyStats, otherTeam,
-  type AbilityInst, type Fx, type GameEvent, type Mods, type Nova, type Projectile, type Rarity, type Slot,
+  type AbilityInst, type BoonInst, type Fx, type GameEvent, type Mods, type Nova, type Projectile, type Rarity, type Slot,
   type Stats, type Team, type Unit, type UnitKind, type Vec, type Zone,
 } from './types';
 
@@ -32,6 +32,21 @@ export interface HeroSetup {
 }
 
 const len = (x: number, y: number) => Math.hypot(x, y);
+const pctFmt = (v: number) => `${Math.round(v * 100)}%`;
+const intFmt = (v: number) => String(Math.round(v));
+/** Effect boons with a ceiling: [value per 1.0 of power, maximum]. Matches the numbers in boons.ts / world. */
+const EFFECT_CAPS: Partial<Record<EffectId, [number, number]>> = {
+  frost: [0.22, 0.6], cleave: [0.4, 1], ricochet: [0.45, 0.9], echo: [0.3, 1], overcharge: [0.3, 0.6], detonate: [0.15, 0.5],
+};
+/** Stats shown on boon cards: [key, label, format, cap]. */
+const STAT_PREVIEW: [keyof Stats, string, (v: number) => string, number?][] = [
+  ['maxHp', 'Max health', intFmt], ['hpRegen', 'Health regen', (v) => `${v.toFixed(1)}/s`], ['regenPct', 'Regen', (v) => `${(v * 100).toFixed(1)}% hp/s`, 0.15],
+  ['recoup', 'Heal back from damage', pctFmt, 0.8], ['damageReduction', 'Damage taken reduced by', pctFmt, 0.7], ['ad', 'Attack damage', intFmt],
+  ['attackSpeed', 'Attack speed', (v) => v.toFixed(2)], ['attackRange', 'Attack range', intFmt], ['moveSpeed', 'Move speed', intFmt, 650],
+  ['spellPower', 'Spell power', pctFmt], ['cdr', 'Cooldown reduction', pctFmt, 0.6], ['critChance', 'Crit chance', pctFmt, 1],
+  ['lifesteal', 'Lifesteal', pctFmt], ['spellVamp', 'Spell vamp', pctFmt], ['onHitDamage', 'On-hit damage', intFmt],
+  ['thorns', 'Thorns', pctFmt], ['execute', 'Execute bonus', pctFmt],
+];
 const MINION_POWER = 1.15;
 /** XP for taking down a hero of the given level (raised so winning fights snowballs into boons). */
 const KILL_XP = (level: number) => 150 + 36 * level;
@@ -75,7 +90,7 @@ export class World {
       id: this.nextId++, kind, team, x, y, radius, hp: base.maxHp, stats: { ...base }, baseStats: base, dead: false,
       attackCd: 0, facing: { x: laneDir(team), y: 0 }, order: { kind: 'idle' },
       stunUntil: 0, slowUntil: 0, slowPct: 0, stealthUntil: 0, invulnUntil: 0, shield: 0, shieldUntil: 0,
-      buffs: [], damagedBy: new Map(), lastHitHeroAt: -99, dots: [], nextDot: 0,
+      buffs: [], damagedBy: new Map(), lastHitHeroAt: -99, dots: [], nextDot: 0, recoupPool: 0,
     };
     this.units.push(u);
     this.byId.set(u.id, u);
@@ -84,11 +99,11 @@ export class World {
 
   private buildBase(team: Team) {
     const tower = (hp: number): Stats => ({ ...emptyStats(), maxHp: hp, ad: 130, attackRange: 560, attackSpeed: 0.85 });
-    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(5200));
+    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(5900));
     outer.structure = { consecutive: 0 };
-    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(5600));
+    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(6300));
     inner.structure = { consecutive: 0, protectedBy: outer.id };
-    const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 5200 });
+    const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 6500 });
     nexus.structure = { consecutive: 0, protectedBy: inner.id };
   }
 
@@ -285,17 +300,20 @@ export class World {
     }
   }
 
+  /** Shields stack (up to the unit's max health); the longest remaining duration is kept. */
   shield(u: Unit, amount: number, dur: number) {
-    u.shield = Math.max(u.shield, amount);
-    u.shieldUntil = this.time + dur;
+    u.shield = Math.min(u.stats.maxHp, u.shield + amount);
+    u.shieldUntil = Math.max(u.shieldUntil, this.time + dur);
   }
 
+  /** Keeps the longer of the current and new invisibility. */
   stealth(u: Unit, dur: number) {
-    u.stealthUntil = this.time + dur;
+    u.stealthUntil = Math.max(u.stealthUntil, this.time + dur);
   }
 
+  /** Keeps the longer of the current and new invulnerability (Second Wind can't cut Time Warp short). */
   invuln(u: Unit, dur: number) {
-    u.invulnUntil = this.time + dur;
+    u.invulnUntil = Math.max(u.invulnUntil, this.time + dur);
     u.dash = undefined;
   }
 
@@ -346,11 +364,11 @@ export class World {
     // Structures harden against high-level heroes, so snowballing wins fights, not instant sieges.
     if (tgt.structure && src.hero) amount /= 1 + 0.1 * (src.hero.level - 1);
     // Minion waves are big and frequent now, so structures shrug off most minion damage.
-    if (tgt.structure && src.kind === 'creep') amount *= 0.6;
+    if (tgt.structure && src.kind === 'creep') amount *= 0.35;
     if (tgt.structure) {
       // Fortified early (no 4-minute stomps), crumbling in overtime (no 40-minute stalemates).
       const minutes = this.time / 60;
-      if (minutes < 5) amount *= 0.5;
+      if (minutes < 6) amount *= 0.4;
       else if (minutes > 15) amount *= 1 + (minutes - 15) * 0.2;
     }
     if (this.playerTeam && src.hero && !src.hero.isPlayer && src.team !== this.playerTeam) amount *= this.difficulty().damage;
@@ -362,6 +380,7 @@ export class World {
     }
     const dealt = Math.min(tgt.hp, amount);
     tgt.hp -= amount;
+    if (tgt.stats.recoup > 0 && amount > 0) tgt.recoupPool += amount * tgt.stats.recoup;
 
     if (src.hero) {
       src.hero.lastCombatAt = this.time;
@@ -659,6 +678,17 @@ export class World {
   // ------------------------------------------------------------------ stats
 
   recompute(u: Unit) {
+    const s = this.computeStats(u);
+    const h = u.hero;
+    const oldMax = u.stats.maxHp;
+    u.stats = s;
+    if (s.maxHp > oldMax && !u.dead && oldMax > 0) u.hp += s.maxHp - oldMax;
+    u.hp = Math.min(u.hp, s.maxHp);
+    if (h) u.radius = 24 * (1 + s.size);
+  }
+
+  /** What a unit's stats would be with optional extra boons (used for boon card previews). */
+  computeStats(u: Unit, extraBoons: BoonInst[] = []): Stats {
     const base = u.hero ? heroBaseStats(u.hero.def, u.hero.level) : u.baseStats;
     const add = emptyStats();
     const mul = emptyStats();
@@ -675,7 +705,7 @@ export class World {
         apply(p.def.mods?.(m));
         apply(p.def.dynamicMods?.(u, m));
       }
-      for (const b of h.boons) apply(b.def.mods?.(RARITIES[b.rarity].mult));
+      for (const b of [...h.boons, ...extraBoons]) apply(b.def.mods?.(RARITIES[b.rarity].mult));
     }
     for (const b of u.buffs) apply(b);
     const s = emptyStats();
@@ -684,11 +714,39 @@ export class World {
     s.damageReduction = Math.min(0.7, s.damageReduction);
     s.critChance = Math.min(1, s.critChance);
     s.moveSpeed = Math.min(650, s.moveSpeed);
-    const oldMax = u.stats.maxHp;
-    u.stats = s;
-    if (s.maxHp > oldMax && !u.dead && oldMax > 0) u.hp += s.maxHp - oldMax;
-    u.hp = Math.min(u.hp, s.maxHp);
-    if (h) u.radius = 24 * (1 + s.size);
+    s.recoup = Math.min(0.8, s.recoup);
+    s.regenPct = Math.min(0.15, s.regenPct);
+    return s;
+  }
+
+  /**
+   * Plain-language "before → after" lines for a boon card. Stat boons list every stat that
+   * changes (and flag caps); effect boons say how the copy stacks with what you already own.
+   */
+  previewBoon(u: Unit, b: BoonInst): string[] {
+    const h = u.hero!;
+    if (b.def.kind === 'effect' && b.def.effect) {
+      const have = h.effects[b.def.effect] ?? 0;
+      const total = have + RARITIES[b.rarity].mult;
+      const lines = [have > 0 ? `Stacks with your copy: ×${have.toFixed(1)} → ×${total.toFixed(1)} power` : 'New effect'];
+      if (have > 0) lines.push(`After: ${b.def.desc(total)}`);
+      const cap = EFFECT_CAPS[b.def.effect];
+      if (cap) {
+        const [per, max] = cap;
+        if (per * have >= max) lines.push('Already at its maximum: this copy adds nothing');
+        else if (per * total >= max) lines.push('Reaches its maximum with this copy');
+      }
+      if (b.def.effect === 'secondWind' && have > 0) lines.push('Still once per life; only the untouchable time grows');
+      if (b.def.effect === 'split' && have > 0 && have < 1.8 && total >= 1.8) lines.push('Upgrades to 4 extra projectiles');
+      return lines;
+    }
+    const before = u.stats;
+    const after = this.computeStats(u, [b]);
+    return STAT_PREVIEW.flatMap(([k, label, fmt, cap]) => {
+      if (Math.abs(after[k] - before[k]) < 1e-6) return [];
+      const capped = cap !== undefined && after[k] >= cap - 1e-6;
+      return [`${label}: ${fmt(before[k])} → ${fmt(after[k])}${capped ? ' (max)' : ''}`];
+    });
   }
 
   // ------------------------------------------------------------------ main loop
@@ -718,6 +776,13 @@ export class World {
       if (u.buffs.length) u.buffs = u.buffs.filter((b) => b.until > t);
       if (u.hero || u.buffs.length) this.recompute(u);
       if (u.hp < u.stats.maxHp && u.stats.hpRegen > 0) u.hp = Math.min(u.stats.maxHp, u.hp + u.stats.hpRegen * dt);
+      if (u.hp < u.stats.maxHp && u.stats.regenPct > 0) u.hp = Math.min(u.stats.maxHp, u.hp + u.stats.maxHp * u.stats.regenPct * dt);
+      if (u.recoupPool > 0.5) {
+        // Recoup pays back damage taken over roughly two seconds.
+        const back = u.recoupPool * Math.min(1, dt * 1.5);
+        u.recoupPool -= back;
+        this.heal(u, back, true);
+      }
       if (u.dots.length && t >= u.nextDot) {
         u.nextDot = t + 0.5;
         u.dots = u.dots.filter((d) => d.until > t);
@@ -808,6 +873,7 @@ export class World {
     u.hero!.retreating = false;
     u.hero!.secondWindUsed = false;
     u.dots = [];
+    u.recoupPool = 0;
     this.recompute(u);
     u.hp = u.stats.maxHp;
   }
@@ -817,7 +883,7 @@ export class World {
     const minutes = this.time / 60;
     // Creeps scale up over time; past 18 minutes they ramp hard so games always end.
     // MINION_POWER: minions are 15% stronger (health and damage) than the v3 baseline.
-    const scale = MINION_POWER * (1 + 0.045 * minutes + Math.max(0, minutes - 18) * 0.25);
+    const scale = MINION_POWER * (1 + 0.07 * minutes + Math.max(0, minutes - 14) * 0.25);
     for (const team of ['blue', 'red'] as Team[]) {
       const x = mirrorX(team, STRUCTURE_X.nexus + 120);
       for (let i = 0; i < 6; i++) {

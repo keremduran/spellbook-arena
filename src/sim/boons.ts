@@ -34,6 +34,8 @@ export const STAT_BOONS: BoonDef[] = [
   { id: 'vampirism', name: 'Vampirism', icon: '🩸', kind: 'stat', desc: (m) => `+${pct(0.05 * m)} lifesteal`, mods: (m) => ({ add: { lifesteal: 0.05 * m } }) },
   { id: 'spell_thirst', name: 'Spell Thirst', icon: '🍷', kind: 'stat', desc: (m) => `Abilities heal you for ${pct(0.08 * m)} of their damage`, mods: (m) => ({ add: { spellVamp: 0.08 * m } }) },
   { id: 'precision', name: 'Precision', icon: '🎯', kind: 'stat', desc: (m) => `+${pct(0.08 * m)} critical strike chance`, mods: (m) => ({ add: { critChance: 0.08 * m } }) },
+  { id: 'stoneheart', name: 'Stoneheart', icon: '💎', kind: 'stat', desc: (m) => `Regenerate ${(0.6 * m).toFixed(1)}% of max health per second`, mods: (m) => ({ add: { regenPct: 0.006 * m } }) },
+  { id: 'grit', name: 'Grit', icon: '🪨', kind: 'stat', desc: (m) => `Heal back ${pct(0.1 * m)} of damage taken`, mods: (m) => ({ add: { recoup: 0.1 * m } }) },
   { id: 'bulwark', name: 'Bulwark', icon: '🛡️', kind: 'stat', desc: (m) => `Take ${pct(0.06 * m)} less damage`, mods: (m) => ({ add: { damageReduction: 0.06 * m } }) },
 ];
 
@@ -57,6 +59,9 @@ export const EFFECT_BOONS: BoonDef[] = [
 
 export const BOONS: BoonDef[] = [...STAT_BOONS, ...EFFECT_BOONS];
 
+/** Defensive stat boons, offered more often so tank builds come together. */
+const TANK_BOONS = new Set(['vitality', 'bulwark', 'stoneheart', 'grit']);
+
 export const rollRarity = (rng: Rng, minRarity: Rarity = 'common'): Rarity => {
   const allowed = RARITY_ORDER.slice(RARITY_ORDER.indexOf(minRarity));
   return rng.weighted(allowed, (r) => RARITIES[r].weight);
@@ -72,7 +77,7 @@ export const rollBoonOffer = (rng: Rng, count = 3, minRarity: Rarity = 'common',
   const chosen: BoonDef[] = [pickEffect()];
   while (chosen.length < count) {
     const pool = rng.next() < 0.55 ? EFFECT_BOONS : STAT_BOONS;
-    const b = pool === EFFECT_BOONS ? pickEffect() : rng.pick(pool);
+    const b = pool === EFFECT_BOONS ? pickEffect() : rng.weighted(STAT_BOONS, (x) => (TANK_BOONS.has(x.id) ? 1.6 : 1));
     if (!chosen.includes(b)) chosen.push(b);
   }
   return rng.sample(chosen, chosen.length).map((def) => ({ def, rarity: rollRarity(rng, minRarity) }));

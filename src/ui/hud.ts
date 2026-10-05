@@ -251,7 +251,7 @@ export class Hud {
         el('span.bt', {}, [portrait(this.player), `Choose a boon for ${h.def.name}`, el('small', { text: ` Lv ${h.level}` })]),
         el('small', { text: h.offers.length > 1 ? `+${h.offers.length - 1} more waiting · keys 1 2 3` : 'Keys 1 · 2 · 3' }),
       ]),
-      boonCards(offer, (i) => this.pickBoon(i)),
+      boonCards(offer, (i) => this.pickBoon(i), (b) => this.world.previewBoon(this.player, b)),
     );
   }
 
@@ -373,8 +373,8 @@ export function portrait(u: Unit, size: 'sm' | 'md' = 'md') {
   return el(`span.pface.${size}`, { style: `--hc:${u.hero!.def.color}`, title: u.hero!.name }, [heroImg(u.hero!.def)]);
 }
 
-/** The three boon cards of an offer. */
-export function boonCards(offer: BoonInst[], onPick: (i: number) => void) {
+/** The three boon cards of an offer, each with a before → after note when `preview` is given. */
+export function boonCards(offer: BoonInst[], onPick: (i: number) => void, preview?: (b: BoonInst) => string[]) {
   return el('div.boon-row', {}, offer.map((b, i) => {
     const r = RARITIES[b.rarity];
     const effect = b.def.kind === 'effect';
@@ -384,6 +384,7 @@ export function boonCards(offer: BoonInst[], onPick: (i: number) => void) {
         el('b', { text: b.def.name }),
         el('span.rar', { text: effect ? `✦ ${r.label}` : r.label, title: effect ? 'Effect boon: changes how you fight' : '' }),
         el('p', { text: b.def.desc(r.mult) }),
+        ...(preview ? [el('div.after', {}, preview(b).map((line) => el('span', { text: line })))] : []),
       ]),
       el('kbd.hk', { text: String(i + 1) }),
     ]);

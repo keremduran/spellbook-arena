@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.5 · takedown boons, level 21, stronger shields';
+export const VERSION = 'v3.6 · tank skills, stacking fixes, boon previews';
 
 export interface Settings {
   mode: 'play' | 'manage';

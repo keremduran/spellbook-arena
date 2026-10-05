@@ -44,4 +44,16 @@ export class Rng {
     }
     return items[items.length - 1];
   }
+
+  /** n distinct items, each pick weighted (sampling without replacement). */
+  weightedSample<T>(arr: readonly T[], n: number, weight: (t: T) => number): T[] {
+    const pool = arr.slice();
+    const out: T[] = [];
+    while (out.length < n && pool.length) {
+      const it = this.weighted(pool, weight);
+      out.push(it);
+      pool.splice(pool.indexOf(it), 1);
+    }
+    return out;
+  }
 }

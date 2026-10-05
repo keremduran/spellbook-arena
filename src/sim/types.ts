@@ -40,16 +40,21 @@ export interface Stats {
   thorns: number;
   execute: number;
   size: number;
+  /** Max health regenerated per second, as a fraction (0.01 = 1%/s). */
+  regenPct: number;
+  /** Fraction of damage taken that is healed back over the next ~2s. */
+  recoup: number;
 }
 
 export const STAT_KEYS = [
   'maxHp', 'hpRegen', 'ad', 'attackRange', 'attackSpeed', 'moveSpeed', 'spellPower', 'cdr',
-  'lifesteal', 'spellVamp', 'critChance', 'damageReduction', 'onHitDamage', 'thorns', 'execute', 'size',
+  'lifesteal', 'spellVamp', 'critChance', 'damageReduction', 'onHitDamage', 'thorns', 'execute', 'size', 'regenPct', 'recoup',
 ] as const satisfies readonly (keyof Stats)[];
 
 export const emptyStats = (): Stats => ({
   maxHp: 0, hpRegen: 0, ad: 0, attackRange: 0, attackSpeed: 0, moveSpeed: 0, spellPower: 0, cdr: 0,
   lifesteal: 0, spellVamp: 0, critChance: 0, damageReduction: 0, onHitDamage: 0, thorns: 0, execute: 0, size: 0,
+  regenPct: 0, recoup: 0,
 });
 
 /** Flat additions are applied first, then `mul` as summed percentages: (base + add) * (1 + mul). */
@@ -157,6 +162,8 @@ export interface Unit {
   /** Last time this unit hit an enemy hero (tower aggro). */
   lastHitHeroAt: number;
   dash?: Dash;
+  /** Pending recoup healing (from the recoup stat). */
+  recoupPool: number;
   /** Damage over time (Burning Blade). */
   dots: { src: Unit; dps: number; until: number }[];
   nextDot: number;

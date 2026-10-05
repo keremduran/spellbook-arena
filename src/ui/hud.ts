@@ -99,6 +99,15 @@ export class Hud {
     this.scoreboard.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // "+N more" expands that hero's boons instead of closing.
+      const more = (e.target as HTMLElement).closest('.more') as HTMLElement | null;
+      if (more) {
+        const id = Number(more.dataset.id);
+        if (this.expandedBoons.has(id)) this.expandedBoons.delete(id);
+        else this.expandedBoons.add(id);
+        this.renderScoreboard(true);
+        return;
+      }
       this.showScoreboard(false);
     });
     parent.append(this.root);
@@ -179,7 +188,7 @@ export class Hud {
 
   showScoreboard(show: boolean) {
     this.scoreboard.classList.toggle('hidden', !show);
-    if (show) this.renderScoreboard();
+    if (show) this.renderScoreboard(true);
   }
 
   /** Called every frame: cooldown sweeps update every frame, the rest about 10 times a second. */
@@ -245,18 +254,40 @@ export class Hud {
     );
   }
 
-  private renderScoreboard() {
+  /** Heroes whose full boon list is expanded in the scoreboard. */
+  private expandedBoons = new Set<number>();
+
+  private scoreKey = '';
+
+  private renderScoreboard(force = false) {
+    const me = this.player;
+    const key = this.world.heroList.map((u) => {
+      const h = u.hero!;
+      return `${h.level}/${h.kills}/${h.deaths}/${h.assists}/${h.boons.length}/${this.expandedBoons.has(u.id) ? 1 : 0}`;
+    }).join('|');
+    // Only rebuild when something visible changed, so taps on "+N more" always land.
+    if (!force && key === this.scoreKey) return;
+    this.scoreKey = key;
     clear(this.scoreTable);
-    const rows = [...this.world.heroList].sort((a, b) => (a.team === b.team ? 0 : a.team === 'blue' ? -1 : 1)).map((u) => {
+    // Your own row first, then your team, then the enemy team.
+    const order = (u: Unit) => (u === me ? 0 : u.team === me.team ? 1 : 2);
+    const rows = [...this.world.heroList].sort((a, b) => order(a) - order(b)).map((u) => {
       const h = u.hero!;
       const ab = SLOTS.map((s) => h.abilities[s]?.def.icon ?? '·').join('');
-      const boons = h.boons.map((b) => b.def.icon).join('');
+      const open = this.expandedBoons.has(u.id);
+      const shown = open ? h.boons : h.boons.slice(0, 5);
+      const extra = h.boons.length - shown.length;
+      const boonCell = el('td.boons-cell', {}, [
+        h.boons.length ? shown.map((b) => b.def.icon).join('') : '—',
+        extra > 0 ? el('button.more', { 'data-id': String(u.id) }, [`+${extra} more`]) : null,
+        open && h.boons.length > 5 ? el('button.more', { 'data-id': String(u.id) }, ['less']) : null,
+      ]);
       return el(`tr.${u.team}${h.isPlayer ? '.you' : ''}`, {}, [
         el('td', { text: `${h.def.icon} ${h.name}` }),
         el('td', { text: String(h.level) }),
-        el('td', { text: `${h.kills} / ${h.deaths} / ${h.assists}` }),
+        el('td.kda', { text: `${h.kills} / ${h.deaths} / ${h.assists}` }),
         el('td.ab', { text: ab }),
-        el('td.ab', { text: boons || '—' }),
+        boonCell,
       ]);
     });
     this.scoreTable.append(el('table', {}, [

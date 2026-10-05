@@ -295,7 +295,7 @@ export class ArenaScene extends Phaser.Scene {
       if (u.slowUntil > t) g.lineStyle(2, 0x80deea, 0.8).strokeCircle(u.x, u.y, u.radius + 3);
       const barColor = h.isPlayer ? 0x66bb6a : u.team === view ? 0x42a5f5 : 0xef5350;
       this.hpBar(u.x, u.y - u.radius - 18, 66, 8, u.hp / u.stats.maxHp, barColor, u.shield / u.stats.maxHp);
-      lab.icon.setPosition(u.x, u.y).setAlpha(alpha).setFontSize(Math.round(u.radius * 1.05));
+      lab.icon.setVisible(false);
       lab.name.setPosition(u.x, u.y - u.radius - 22).setText(`${h.level} ${h.name}`).setAlpha(alpha);
     }
 

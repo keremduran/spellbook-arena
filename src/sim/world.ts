@@ -31,6 +31,7 @@ export interface HeroSetup {
 }
 
 const len = (x: number, y: number) => Math.hypot(x, y);
+const MINION_POWER = 1.15;
 
 export class World {
   time = 0;
@@ -801,7 +802,8 @@ export class World {
     this.waveCount++;
     const minutes = this.time / 60;
     // Creeps scale up over time; past 18 minutes they ramp hard so games always end.
-    const scale = 1 + 0.045 * minutes + Math.max(0, minutes - 18) * 0.25;
+    // MINION_POWER: minions are 15% stronger (health and damage) than the v3 baseline.
+    const scale = MINION_POWER * (1 + 0.045 * minutes + Math.max(0, minutes - 18) * 0.25);
     for (const team of ['blue', 'red'] as Team[]) {
       const x = mirrorX(team, STRUCTURE_X.nexus + 120);
       for (let i = 0; i < 6; i++) {

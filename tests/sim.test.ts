@@ -130,6 +130,8 @@ describe('bot manager', () => {
     target.x = 1500;
     target.y = 550;
     target.stunUntil = w.time + 5;
+    target.hp = target.stats.maxHp;
+    w.shield(target, 1e6, 5); // keep it alive so we measure targeting, not burst damage
     for (const h of w.heroList) if (h.team === 'blue') { h.x = 1300; h.y = 550; }
     let most = 0;
     for (let i = 0; i < 30 && !target.dead; i++) {

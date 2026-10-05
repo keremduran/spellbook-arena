@@ -4,6 +4,7 @@ import { Rng } from '../sim/rng';
 import type { GameEvent, Team, Unit } from '../sim/types';
 import type { World } from '../sim/world';
 import { castSound, sfx, type SfxName } from './audio';
+import { paintHero, paintMinion } from './heroArt';
 
 export const hex = (s: string) => parseInt(s.slice(1, 7), 16);
 export const TEAM_COLOR: Record<Team, number> = { blue: 0x4fa3ff, red: 0xff5a5a };
@@ -42,6 +43,7 @@ export class Visuals {
   private swings: Swing[] = [];
   private beams: Beam[] = [];
   private wasMoving = new Map<number, { x: number; y: number; phase: number }>();
+  private lunges = new Map<number, number>();
   private runeGlow!: Phaser.GameObjects.Image;
 
   constructor(private scene: Phaser.Scene, private world: World, private focus: () => Unit | null) {}
@@ -269,11 +271,26 @@ export class Visuals {
 
   // ------------------------------------------------------------------ per-frame sprites
 
+  /** Texture for a unit body: painted hero art, tintable minion art, or the plain orb. */
+  private bodyTexture(u: Unit) {
+    if (u.hero) {
+      const key = `hero_${u.hero.def.id}`;
+      this.canvasTexture(key, 128, 128, (c) => paintHero(c, u.hero!.def.id, u.hero!.def.color));
+      return key;
+    }
+    if (u.creep) {
+      const key = u.creep.ranged ? 'minion_ranged' : 'minion_melee';
+      this.canvasTexture(key, 64, 64, (c) => paintMinion(c, u.creep!.ranged));
+      return key;
+    }
+    return 'orb';
+  }
+
   private spriteFor(u: Unit) {
     let sp = this.sprites.get(u.id);
     if (!sp) {
       const glow = this.scene.add.image(u.x, u.y, 'glow').setBlendMode(Phaser.BlendModes.ADD).setDepth(3);
-      const orb = this.scene.add.image(u.x, u.y, 'orb').setDepth(4);
+      const orb = this.scene.add.image(u.x, u.y, this.bodyTexture(u)).setDepth(4);
       sp = { glow, orb };
       this.sprites.set(u.id, sp);
     }
@@ -319,22 +336,26 @@ export class Visuals {
       const bob = moved > 0.3 ? Math.abs(Math.sin(prev.phase)) * 3 : 0;
       const alpha = u.stealthUntil > t || u.invulnUntil > t ? 0.45 : 1;
       const r = u.radius;
+      // Art faces up; turn it toward the facing direction, with a little sway while walking
+      // and a short lunge right after attacking.
+      const angle = Math.atan2(u.facing.y, u.facing.x) + Math.PI / 2;
+      const sway = moved > 0.3 ? Math.sin(prev.phase * 0.5) * 0.12 : 0;
+      const lungeAge = now - (this.lunges.get(u.id) ?? -1e9);
+      const lunge = lungeAge < 140 ? Math.sin((lungeAge / 140) * Math.PI) * r * 0.35 : 0;
+      const bx = u.x + u.facing.x * lunge;
+      const by = u.y - bob + u.facing.y * lunge;
       g.fillStyle(0x000000, 0.35).fillEllipse(u.x, u.y + r * 0.75, r * 2.1, r * 0.9);
-      sp.glow.setPosition(u.x, u.y).setTint(tc).setScale((r * (u.kind === 'hero' ? 3.4 : 2.4)) / 128).setAlpha((u.kind === 'hero' ? 0.42 : 0.22) * alpha);
-      sp.orb.setPosition(u.x, u.y - bob).setScale((r * 2) / 128).setAlpha(alpha);
-      if (flash) sp.orb.setTintFill(0xffffff);
-      else sp.orb.setTint(u.kind === 'hero' ? hex(u.hero!.def.color) : tc);
       if (u.kind === 'hero') {
-        g.lineStyle(3, tc, alpha).strokeCircle(u.x, u.y - bob, r + 1);
-        // Facing nub shows where the hero is aiming.
-        const fx = u.facing.x;
-        const fy = u.facing.y;
-        const tipX = u.x + fx * (r + 11);
-        const tipY = u.y - bob + fy * (r + 11);
-        g.fillStyle(tc, alpha).fillTriangle(tipX, tipY, u.x + fx * r - fy * 6, u.y - bob + fy * r + fx * 6, u.x + fx * r + fy * 6, u.y - bob + fy * r - fx * 6);
-      } else if (u.creep?.ranged) {
-        g.fillStyle(0xffffff, 0.8).fillCircle(u.x, u.y - bob, 3);
+        // Team-coloured base disc so sides read at a glance under the character art.
+        g.fillStyle(tc, 0.28 * alpha).fillCircle(u.x, u.y, r + 4);
+        g.lineStyle(3, tc, 0.95 * alpha).strokeCircle(u.x, u.y, r + 4);
       }
+      sp.glow.setPosition(u.x, u.y).setTint(tc).setScale((r * (u.kind === 'hero' ? 3.4 : 2.4)) / 128).setAlpha((u.kind === 'hero' ? 0.42 : 0.22) * alpha);
+      const art = u.kind === 'hero' ? (r * 3) / 128 : (r * 2.6) / 64;
+      sp.orb.setPosition(bx, by).setScale(art).setRotation(angle + sway).setAlpha(alpha);
+      if (flash) sp.orb.setTintFill(0xffffff);
+      else if (u.kind === 'hero') sp.orb.clearTint();
+      else sp.orb.setTint(tc);
     }
 
     // Power rune: a spinning golden crystal.
@@ -474,6 +495,7 @@ export class Visuals {
         }
         case 'attack': {
           const mine = e.unitId === me?.id;
+          this.lunges.set(e.unitId, now);
           if (e.tower) {
             this.beams.push({ x: e.x, y: e.y - 64, x2: e.tx, y2: e.ty, color: TEAM_COLOR[w.unit(e.unitId)?.team ?? 'blue'], born: now });
             this.sound('towerShot', e.x, e.y, false);

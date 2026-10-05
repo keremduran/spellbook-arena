@@ -445,3 +445,22 @@ body.touch .hud .slot.passive { right: 178px; bottom: 112px; width: 44px; height
 .sbclose { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line); background: #222c38; color: var(--text); font-size: 14px; z-index: 1; }
 .sbhint { color: var(--muted); font-size: 12px; }
 @media (max-height: 520px) { .scoreboard table { font-size: 11px; } .scoreboard td, .scoreboard th { padding: 3px 6px; } }
+
+/* ---------------------------------------------------------------- v3.1: scoreboard on top, compact boons; phone minimap between thumbs */
+
+.hud .scoreboard { z-index: 30; }
+.scoreboard table { max-width: calc(100vw - 24px); }
+.scoreboard .boons-cell { max-width: 210px; white-space: normal; word-break: break-all; font-size: 16px; letter-spacing: 2px; }
+.scoreboard .kda { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.scoreboard tr.you td { background: rgba(255, 224, 130, 0.08); font-weight: 700; }
+.more { margin-left: 6px; background: #222c38; border: 1px solid var(--line); color: var(--gold); border-radius: 8px; font-size: 11px; font-weight: 800; padding: 1px 6px; letter-spacing: 0; cursor: pointer; }
+
+body.touch .hud:not(.manager) .minimap { top: auto; left: 50%; transform: translateX(-50%); bottom: max(10px, env(safe-area-inset-bottom)); width: min(240px, 30vw); height: auto; aspect-ratio: 480 / 126; display: block; }
+body.touch .hud:not(.manager) .me { top: max(8px, env(safe-area-inset-top)); }
+body.touch .hud:not(.manager) .feed { top: auto; right: auto; left: 50%; transform: translateX(-50%); bottom: calc(max(10px, env(safe-area-inset-bottom)) + 8vw + 14px); align-items: center; }
+@media (max-height: 520px) {
+  .scoreboard table { font-size: 11px; }
+  .scoreboard .boons-cell { max-width: 140px; font-size: 13px; }
+  body.touch .hud:not(.manager) .me { top: max(6px, env(safe-area-inset-top)); }
+  body.touch .hud:not(.manager) .boons { top: 50px; }
+}

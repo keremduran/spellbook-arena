@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3 · effect boons, power rune, faster matches';
+export const VERSION = 'v3.1 · character art, stronger minions';
 
 export interface Settings {
   mode: 'play' | 'manage';

@@ -22,7 +22,8 @@ export const mirrorX = (team: Team, x: number) => (team === 'blue' ? x : MAP_W -
 export const laneDir = (team: Team) => (team === 'blue' ? 1 : -1);
 
 export const FIRST_WAVE = 8;
-export const WAVE_INTERVAL = 24;
+/** 24s / 1.15: waves arrive 15% more often. */
+export const WAVE_INTERVAL = 21;
 export const RANGED_THRESHOLD = 200;
 
 export const xpToNext = (level: number) => 130 + 55 * level;

@@ -252,7 +252,7 @@ export type GameEvent =
   | { type: 'end'; winner: Team }
   /** Presentation-only events (sound and particles). */
   | { type: 'cast'; unitId: number; abilityId: string; kind: 'basic' | 'ult' | 'passive'; tags: string[]; color: string; x: number; y: number }
-  | { type: 'attack'; unitId: number; x: number; y: number; tx: number; ty: number; ranged: boolean; tower: boolean }
+  | { type: 'attack'; unitId: number; x: number; y: number; tx: number; ty: number; ranged: boolean; tower: boolean; tgtId: number }
   | { type: 'die'; unitId: number; kind: UnitKind; team: Team; x: number; y: number; r: number }
   | { type: 'boom'; x: number; y: number; r: number; color: string }
   | { type: 'rune'; unitId: number; x: number; y: number }

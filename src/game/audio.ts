@@ -4,7 +4,7 @@
  */
 
 export type SfxName =
-  | 'swing' | 'shoot' | 'towerShot' | 'hit' | 'crit'
+  | 'swing' | 'shoot' | 'towerShot' | 'towerShotAlly' | 'towerHitMe' | 'hit' | 'crit'
   | 'bolt' | 'zap' | 'boom' | 'bigBoom' | 'whoosh' | 'blink' | 'heal' | 'shield' | 'buff' | 'stun' | 'ult'
   | 'death' | 'kill' | 'allyDown' | 'levelUp' | 'boon' | 'structure' | 'click' | 'victory' | 'defeat' | 'announce' | 'rune';
 
@@ -125,7 +125,7 @@ export class Sfx {
   play(name: SfxName, gain = 1) {
     if (!this.ctx || !this.sfxOn || gain < 0.04) return;
     const now = this.ctx.currentTime;
-    const minGap: Partial<Record<SfxName, number>> = { swing: 0.06, shoot: 0.06, hit: 0.05, towerShot: 0.12, bolt: 0.05, zap: 0.08, boom: 0.08, death: 0.1 };
+    const minGap: Partial<Record<SfxName, number>> = { swing: 0.06, shoot: 0.06, hit: 0.05, towerShot: 0.12, towerShotAlly: 0.12, towerHitMe: 0.3, bolt: 0.05, zap: 0.08, boom: 0.08, death: 0.1 };
     if (now - (this.last.get(name) ?? -1) < (minGap[name] ?? 0.03)) return;
     this.last.set(name, now);
     const bus = this.ctx.createGain();
@@ -141,8 +141,21 @@ export class Sfx {
         this.tone(r(900, 1100), 0.09, { type: 'triangle', to: 380, vol: 0.12 });
         break;
       case 'towerShot':
-        this.tone(220, 0.25, { type: 'sawtooth', to: 70, vol: 0.12 });
-        this.hiss(0.2, { freq: 900, to: 200, vol: 0.15 });
+        // Enemy tower: low, growling thump.
+        this.tone(160, 0.3, { type: 'sawtooth', to: 45, vol: 0.14 });
+        this.tone(110, 0.3, { type: 'square', to: 40, vol: 0.06 });
+        this.hiss(0.22, { freq: 700, to: 150, vol: 0.15 });
+        break;
+      case 'towerShotAlly':
+        // Allied tower: bright, rising zing.
+        this.tone(660, 0.16, { type: 'triangle', to: 1320, vol: 0.1 });
+        this.tone(990, 0.12, { type: 'sine', to: 1760, vol: 0.06, delay: 0.03 });
+        this.hiss(0.1, { filter: 'highpass', freq: 3000, vol: 0.08 });
+        break;
+      case 'towerHitMe':
+        // An enemy tower is shooting you: short warning beeps.
+        this.tone(880, 0.07, { type: 'square', vol: 0.09 });
+        this.tone(660, 0.09, { type: 'square', vol: 0.09, delay: 0.09 });
         break;
       case 'hit':
         this.hiss(0.06, { filter: 'bandpass', freq: r(500, 900), q: 1.5, vol: 0.35 });

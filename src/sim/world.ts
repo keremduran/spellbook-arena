@@ -499,7 +499,7 @@ export class World {
       s.targetId = t.id;
     }
     const ranged = u.kind === 'tower' || u.stats.attackRange >= RANGED_THRESHOLD;
-    if (u.kind !== 'creep') this.events.push({ type: 'attack', unitId: u.id, x: u.x, y: u.y, tx: t.x, ty: t.y, ranged, tower: u.kind === 'tower' });
+    if (u.kind !== 'creep') this.events.push({ type: 'attack', unitId: u.id, x: u.x, y: u.y, tx: t.x, ty: t.y, ranged, tower: u.kind === 'tower', tgtId: t.id });
     if (ranged) {
       this.projectiles.push({
         id: this.nextId++, owner: u, team: u.team, x: u.x, y: u.y, vx: 0, vy: 0, speed: u.kind === 'tower' ? 1300 : 1100,

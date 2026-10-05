@@ -505,7 +505,11 @@ export class Visuals {
           this.lunges.set(e.unitId, now);
           if (e.tower) {
             this.beams.push({ x: e.x, y: e.y - 64, x2: e.tx, y2: e.ty, color: TEAM_COLOR[w.unit(e.unitId)?.team ?? 'blue'], born: now });
-            this.sound('towerShot', e.x, e.y, false);
+            // Allied and enemy towers sound different; an enemy tower shooting you also beeps.
+            const tower = w.unit(e.unitId);
+            const pov = w.playerTeam ?? me?.team ?? 'blue';
+            this.sound(tower?.team === pov ? 'towerShotAlly' : 'towerShot', e.x, e.y, false);
+            if (me && e.tgtId === me.id) this.sound('towerHitMe', e.x, e.y, true);
           } else if (e.ranged) {
             this.sound('shoot', e.x, e.y, mine);
           } else {

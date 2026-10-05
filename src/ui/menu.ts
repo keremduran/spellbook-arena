@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.9 · no more unkillables';
+export const VERSION = 'v3.10 · tower sounds by team';
 
 export interface Settings {
   mode: 'play' | 'manage';

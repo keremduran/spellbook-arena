@@ -238,3 +238,17 @@ describe('map layout', () => {
     }
   });
 });
+
+describe('pathing', () => {
+  it('minions walk around towers instead of getting stuck behind them', () => {
+    const w = new World({ boonEveryLevels: 3, seed: 8 });
+    w.rune.nextAt = 9999;
+    // No heroes: the first blue wave has to walk past its own inner and outer towers.
+    for (let i = 0; i < 30 * 16; i++) w.update(STEP);
+    const blue = w.units.filter((u) => u.kind === 'creep' && u.team === 'blue' && !u.dead);
+    const outer = w.units.find((u) => u.kind === 'tower' && u.team === 'blue' && !u.structure!.protectedBy)!;
+    expect(blue.length).toBeGreaterThan(0);
+    const firstWave = blue.slice(0, 6);
+    for (const c of firstWave) expect({ id: c.id, x: Math.round(c.x), passed: c.x > outer.x + outer.radius }).toMatchObject({ passed: true });
+  });
+});

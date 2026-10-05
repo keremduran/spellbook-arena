@@ -32,6 +32,8 @@ export interface HeroSetup {
 
 const len = (x: number, y: number) => Math.hypot(x, y);
 const MINION_POWER = 1.15;
+/** Extra minion health on top of MINION_POWER. */
+const MINION_HP = 1.1;
 
 export class World {
   time = 0;
@@ -808,9 +810,10 @@ export class World {
       const x = mirrorX(team, STRUCTURE_X.nexus + 120);
       for (let i = 0; i < 6; i++) {
         const ranged = i >= 3;
+        const hp = scale * MINION_HP;
         const base: Stats = ranged
-          ? { ...emptyStats(), maxHp: 300 * scale, ad: 24 * scale, attackRange: 330, attackSpeed: 0.7, moveSpeed: 235 }
-          : { ...emptyStats(), maxHp: 440 * scale, ad: 15 * scale, attackRange: 45, attackSpeed: 0.8, moveSpeed: 235 };
+          ? { ...emptyStats(), maxHp: 300 * hp, ad: 24 * scale, attackRange: 330, attackSpeed: 0.7, moveSpeed: 235 }
+          : { ...emptyStats(), maxHp: 440 * hp, ad: 15 * scale, attackRange: 45, attackSpeed: 0.8, moveSpeed: 235 };
         const laneY = LANE_Y + (i % 3 - 1) * 70;
         const c = this.makeUnit('creep', team, x - laneDir(team) * (ranged ? 90 : 0), laneY, ranged ? 15 : 17, base);
         c.creep = { ranged, xp: ranged ? 45 : 55, nextThink: 0, laneY };
@@ -825,9 +828,40 @@ export class World {
     if (d < 2) return true;
     const speed = u.stats.moveSpeed * (u.slowUntil > this.time ? 1 - u.slowPct : 1);
     const step = Math.min(d, speed * dt);
-    u.facing = { x: dx / d, y: dy / d };
-    this.moveUnit(u, u.x + (dx / d) * step, u.y + (dy / d) * step);
+    const dir = this.steer(u, dx / d, dy / d, x, y);
+    u.facing = dir;
+    this.moveUnit(u, u.x + dir.x * step, u.y + dir.y * step);
     return step >= d;
+  }
+
+  /**
+   * Obstacle avoidance: if a tower or nexus sits on the path ahead, bend the direction
+   * sideways so units walk around it instead of pushing into it forever.
+   */
+  private steer(u: Unit, dirx: number, diry: number, goalX: number, goalY: number): Vec {
+    for (const s of this.units) {
+      if (s.dead || (s.kind !== 'tower' && s.kind !== 'nexus')) continue;
+      // Walking up to attack this structure: no need to go around it.
+      if (len(goalX - s.x, goalY - s.y) < s.radius + 10) continue;
+      const rx = s.x - u.x;
+      const ry = s.y - u.y;
+      const ahead = rx * dirx + ry * diry;
+      if (ahead <= 0 || ahead > s.radius + u.radius + 120) continue;
+      // Sideways offset of the obstacle from our path (n is the left-hand normal).
+      const nx = -diry;
+      const ny = dirx;
+      const offset = rx * nx + ry * ny;
+      const clear = s.radius + u.radius + 10;
+      if (Math.abs(offset) >= clear) continue;
+      const side = offset >= 0 ? -1 : 1;
+      const k = (1.4 * (clear - Math.abs(offset))) / clear;
+      dirx += nx * side * k;
+      diry += ny * side * k;
+      const l = len(dirx, diry) || 1;
+      dirx /= l;
+      diry /= l;
+    }
+    return { x: dirx, y: diry };
   }
 
   private act(u: Unit, dt: number) {

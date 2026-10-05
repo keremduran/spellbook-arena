@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.2 · hero icons, wider map';
+export const VERSION = 'v3.3 · minions path around towers, tankier units';
 
 export interface Settings {
   mode: 'play' | 'manage';

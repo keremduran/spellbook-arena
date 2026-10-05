@@ -33,16 +33,20 @@ export function showDraft(root: HTMLElement, hero: HeroDef, draft: Draft, rng: R
 
   const timerText = el('span', { text: String(left) });
   const timer = el('div.timer', {}, [timerText]);
-  const lock = el('button.btn-primary', { disabled: true, onclick: () => finish() }, ['Lock in']) as HTMLButtonElement;
+  const lock = el('button.btn-primary', { disabled: true, onclick: () => finish() }, ['Lock in (5 left)']) as HTMLButtonElement;
 
   const choose = (slot: Slot, i: number) => {
-    picks[slot] = draft[slot][i];
+    const clearing = picks[slot] === draft[slot][i];
+    if (clearing) delete picks[slot];
+    else picks[slot] = draft[slot][i];
     cards[slot].forEach((c, j) => {
-      c.classList.toggle('selected', i === j);
-      c.classList.toggle('dim', i !== j);
+      c.classList.toggle('selected', !clearing && i === j);
+      c.classList.toggle('dim', !clearing && i !== j);
     });
-    badges[slot].classList.add('done');
-    lock.disabled = SLOTS.some((s) => !picks[s]);
+    badges[slot].classList.toggle('done', !clearing);
+    const left = SLOTS.filter((s) => !picks[s]).length;
+    lock.disabled = left > 0;
+    lock.textContent = left > 0 ? `Lock in (${left} left)` : 'Lock in';
   };
 
   const rows = SLOTS.map((slot) => {

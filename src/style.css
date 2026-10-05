@@ -342,3 +342,24 @@ button.dir.dead { opacity: 0.45; }
   .selrow .lbl { display: none; }
   .manager .topbar { top: 6px; }
 }
+
+/* ---------------------------------------------------------------- boon picker portraits and tabs */
+
+.pface {
+  display: inline-grid; place-items: center; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--hc) 80%, white), var(--hc) 60%, color-mix(in srgb, var(--hc) 45%, black));
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25);
+}
+.pface.md { width: 34px; height: 34px; font-size: 19px; }
+.pface.sm { width: 24px; height: 24px; font-size: 13px; }
+.boons h3 { align-items: center; gap: 8px; }
+.bt { display: flex; align-items: center; gap: 8px; }
+.bt small { font-family: var(--body); color: var(--muted); font-size: 12px; }
+.btabs { display: flex; gap: 6px; margin: 0 0 8px; flex-wrap: wrap; }
+.btab { display: flex; align-items: center; gap: 4px; background: #18212c; border: 2px solid transparent; border-radius: 20px; padding: 2px 8px 2px 2px; color: var(--text); font-weight: 800; font-size: 12px; }
+.btab.on { border-color: var(--gold); }
+.manager .minimap { cursor: pointer; }
+@media (max-height: 520px) {
+  .pface.md { width: 24px; height: 24px; font-size: 13px; }
+  .btabs { margin-bottom: 4px; }
+}

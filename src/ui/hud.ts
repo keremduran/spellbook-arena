@@ -1,6 +1,6 @@
 import { autoAim } from '../game/aim';
 import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
-import { RARITIES, SLOTS, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
+import { RARITIES, SLOTS, type BoonInst, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
 import { clear, el } from './dom';
 
@@ -148,15 +148,11 @@ export class Hud {
     this.boons.classList.toggle('hidden', !offer);
     if (!offer) return;
     this.boons.append(
-      el('h3', {}, ['Choose a boon', el('small', { text: h.offers.length > 1 ? `+${h.offers.length - 1} more waiting` : 'Keys 1 · 2 · 3' })]),
-      el('div.boon-row', {}, offer.map((b, i) => {
-        const r = RARITIES[b.rarity];
-        return el('button.boon', { style: `--rc:${r.color}`, onclick: () => this.pickBoon(i) }, [
-          el('span.bi', { text: b.def.icon }),
-          el('div', {}, [el('b', { text: b.def.name }), el('span.rar', { text: r.label }), el('p', { text: b.def.desc(r.mult) })]),
-          el('kbd.hk', { text: String(i + 1) }),
-        ]);
-      })),
+      el('h3', {}, [
+        el('span.bt', {}, [portrait(this.player), `Choose a boon for ${h.def.name}`, el('small', { text: ` Lv ${h.level}` })]),
+        el('small', { text: h.offers.length > 1 ? `+${h.offers.length - 1} more waiting · keys 1 2 3` : 'Keys 1 · 2 · 3' }),
+      ]),
+      boonCards(offer, (i) => this.pickBoon(i)),
     );
   }
 
@@ -223,4 +219,21 @@ export function pushFeed(feed: HTMLElement, events: GameEvent[], viewTeam: Team)
     const l = line;
     setTimeout(() => l.remove(), 6000);
   }
+}
+
+/** Round hero portrait used in boon pickers and tabs. */
+export function portrait(u: Unit, size: 'sm' | 'md' = 'md') {
+  return el(`span.pface.${size}`, { style: `--hc:${u.hero!.def.color}`, title: u.hero!.name, text: u.hero!.def.icon });
+}
+
+/** The three boon cards of an offer. */
+export function boonCards(offer: BoonInst[], onPick: (i: number) => void) {
+  return el('div.boon-row', {}, offer.map((b, i) => {
+    const r = RARITIES[b.rarity];
+    return el('button.boon', { style: `--rc:${r.color}`, onclick: () => onPick(i) }, [
+      el('span.bi', { text: b.def.icon }),
+      el('div', {}, [el('b', { text: b.def.name }), el('span.rar', { text: r.label }), el('p', { text: b.def.desc(r.mult) })]),
+      el('kbd.hk', { text: String(i + 1) }),
+    ]);
+  }));
 }

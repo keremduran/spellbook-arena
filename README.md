@@ -13,6 +13,8 @@ npm run dev        # http://localhost:5173
 - **Phone:** play in landscape. Use the joystick or tap the map to move. Ability buttons aim at the nearest enemy automatically.
 - **Goal:** destroy the enemy's outer tower, then the inner tower, then the nexus. Your fountain heals you; the enemy's fountain kills you.
 
+- **Watch & manage bots:** all 10 heroes are bots. Click one to follow it and give it orders (Push, Farm, Group, Retreat, focus an enemy), or order a whole team. You pick the boons for the bots you manage; tabs or `N` switch between bots that are waiting.
+
 Add `?seed=123` to the URL for a repeatable draft and match, or `?quick` to skip the draft.
 
 ## What's in it
@@ -23,7 +25,7 @@ Add `?seed=123` to the URL for a repeatable draft and match, or `?quick` to skip
 | Basic abilities (Q/W/E) | 24: skillshots, area attacks, dashes, blink, invisibility, hook, shields, heals, attack-speed buffs and more |
 | Ultimates (R) | 12, including a map-wide strike, a black hole, a beam, invulnerability, an execute and an unstoppable charge |
 | Passives (P) | 15: lifesteal, attack speed, thorns, stuns every few attacks, out-of-combat invisibility, extra range and more |
-| Boons | 15 stat boons in 4 rarities. Pick one every 1, 2 or 3 levels (set in the menu). |
+| Boons | 15 stat boons in 4 rarities, offered every 2, 3 (default) or 4 levels. |
 | Map | One lane with 2 towers and a nexus per side, minion waves every 28s and fountains |
 | Bots | Every other slot is a bot. Bots draft the highest-rarity options, last-hit minions, fight, avoid tower dives, retreat when low, and use abilities by type (damage, engage, self-buff, heal, escape). |
 
@@ -44,9 +46,14 @@ The simulation doesn't depend on rendering, so online multiplayer can be added l
 ## Scripts
 
 - `npm test`: unit tests plus full simulated bot matches
+- `BALANCE=1 GAMES=60 npx vitest run tests/balance.test.ts`: win rate per hero and ability over many bot matches
 - `npm run build`: type-check and production build into `dist/`
 
 Pushing to `main` deploys to GitHub Pages through `.github/workflows/deploy.yml`. Enable Pages with "GitHub Actions" as the source.
+
+## About League of Legends assets
+
+This project uses no Riot Games names, champions, art or abilities. Riot's fan content policy doesn't allow games built on their IP, so the heroes and spells here are original.
 
 ## License
 

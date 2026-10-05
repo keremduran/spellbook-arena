@@ -9,10 +9,10 @@ export interface Settings {
   name: string;
 }
 
-const KEY = 'spellbook-settings';
+const KEY = 'spellbook-settings-v2';
 
 export function loadSettings(): Settings {
-  const fallback: Settings = { mode: 'play', manageTeams: 'blue', teamSize: 5, boonEveryLevels: 2, name: 'You' };
+  const fallback: Settings = { mode: 'play', manageTeams: 'blue', teamSize: 5, boonEveryLevels: 3, name: 'You' };
   try {
     return { ...fallback, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') };
   } catch {
@@ -45,6 +45,15 @@ function seg<T>(options: [T, string][], value: T, onPick: (v: T) => void) {
 export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
   const s = loadSettings();
   const name = el('input.name', { value: s.name, maxlength: 14 }) as HTMLInputElement;
+  const manageRow = el('div.setting', {}, [
+    el('label', { text: 'You pick boons for' }),
+    seg<Settings['manageTeams']>([['blue', 'Blue bots'], ['both', 'Every bot']], s.manageTeams, (v) => (s.manageTeams = v)),
+  ]);
+  const nameRow = el('div.setting', {}, [el('label', { text: 'Your name' }), name]);
+  const syncMode = () => {
+    manageRow.classList.toggle('hidden', s.mode !== 'manage');
+    nameRow.classList.toggle('hidden', s.mode !== 'play');
+  };
   const screen: HTMLElement = el('div.screen', {}, [
     el('div.menu', {}, [
       el('h1.title', { text: 'Spellbook Arena' }),
@@ -52,20 +61,17 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
       el('div.panel', {}, [
         el('div.setting', {}, [
           el('label', { text: 'Mode' }),
-          seg<Settings['mode']>([['play', '🎮 Play'], ['manage', '🧠 Watch & manage bots']], s.mode, (v) => (s.mode = v)),
+          seg<Settings['mode']>([['play', '🎮 Play'], ['manage', '🧠 Watch & manage bots']], s.mode, (v) => { s.mode = v; syncMode(); }),
         ]),
-        el('div.setting', {}, [
-          el('label', { text: 'You pick boons for' }),
-          seg<Settings['manageTeams']>([['blue', 'Blue bots'], ['both', 'Every bot']], s.manageTeams, (v) => (s.manageTeams = v)),
-        ]),
-        el('div.setting', {}, [el('label', { text: 'Your name' }), name]),
+        manageRow,
+        nameRow,
         el('div.setting', {}, [
           el('label', { text: 'Team size' }),
           seg<number>([[1, '1v1'], [3, '3v3'], [5, '5v5']], s.teamSize, (v) => (s.teamSize = v)),
         ]),
         el('div.setting', {}, [
           el('label', { text: 'Boons' }),
-          seg<number>([[1, 'Every level'], [2, 'Every 2 levels'], [3, 'Every 3 levels'], [0, 'Off']], s.boonEveryLevels, (v) => (s.boonEveryLevels = v)),
+          seg<number>([[2, 'Every 2 levels'], [3, 'Every 3 levels'], [4, 'Every 4 levels'], [0, 'Off']], s.boonEveryLevels, (v) => (s.boonEveryLevels = v)),
         ]),
       ]),
       el('div', { style: 'margin-top:22px' }, [
@@ -80,11 +86,12 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
         el('div', { html: '<b>Draft:</b> you get a random hero and 60 seconds to pick 1 of 4 random options for your Passive, Q, W, E and R. Options roll rarities from Common to Legendary, so your build can be trash or totally broken.' }),
         el('div', { html: '<b>Desktop:</b> click to move / attack (hold to keep moving), <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> cast towards the mouse, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick boons, <kbd>S</kbd> stop, hold <kbd>Tab</kbd> for the scoreboard, <kbd>Esc</kbd> pause.' }),
         el('div', { html: '<b>Mobile:</b> joystick or tap to move, ability buttons auto-aim at the nearest enemy. Play in landscape.' }),
-        el('div', { html: '<b>Watch &amp; manage:</b> all 10 heroes are bots. Click a bot (or its row) to follow it and give it orders: Push, Farm, Group, Retreat, or focus an enemy. Team buttons order everyone at once. You choose the boons for the bots you manage. Drag or use WASD/arrows to move the camera, scroll to zoom, change speed at the top, <kbd>Space</kbd> pauses.' }),
+        el('div', { html: '<b>Watch &amp; manage:</b> all 10 heroes are bots. Click a bot (or its row) to follow it and give it orders: Push, Farm, Group, Retreat, or focus an enemy. Team buttons order everyone at once. You choose the boons for the bots you manage: tabs (or <kbd>N</kbd>) switch between bots that are waiting, and “Let bot pick” hands one back. Drag, WASD/arrows or the minimap move the camera, scroll to zoom, change speed at the top, <kbd>Space</kbd> pauses.' }),
         el('div', { html: '<b>Goal:</b> destroy the enemy towers, then their nexus. Your fountain heals you; theirs will melt you.' }),
       ]),
     ]),
   ]);
+  syncMode();
   root.append(screen);
   return () => screen.remove();
 }

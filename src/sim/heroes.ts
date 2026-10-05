@@ -18,7 +18,7 @@ export interface HeroDef {
 /** Hero "chassis": base stats only. All abilities come from the draft. */
 export const HEROES: HeroDef[] = [
   { id: 'knight', name: 'Knight', role: 'Tank', icon: '🛡️', color: '#90a4ae', hp: 900, regen: 6, ad: 46, attackSpeed: 0.7, range: 75, moveSpeed: 300, spellPower: 0.85 },
-  { id: 'berserker', name: 'Berserker', role: 'Fighter', icon: '🪓', color: '#e57373', hp: 780, regen: 5, ad: 60, attackSpeed: 0.8, range: 75, moveSpeed: 310, spellPower: 0.9 },
+  { id: 'berserker', name: 'Berserker', role: 'Fighter', icon: '🪓', color: '#e57373', hp: 830, regen: 5.5, ad: 64, attackSpeed: 0.82, range: 75, moveSpeed: 310, spellPower: 0.9 },
   { id: 'duelist', name: 'Duelist', role: 'Skirmisher', icon: '⚔️', color: '#ffb74d', hp: 690, regen: 4.5, ad: 58, attackSpeed: 0.95, range: 80, moveSpeed: 320, spellPower: 0.9 },
   { id: 'shade', name: 'Shade', role: 'Assassin', icon: '🗡️', color: '#9575cd', hp: 620, regen: 4, ad: 64, attackSpeed: 0.85, range: 75, moveSpeed: 335, spellPower: 1.05 },
   { id: 'ranger', name: 'Ranger', role: 'Marksman', icon: '🏹', color: '#81c784', hp: 570, regen: 3.5, ad: 56, attackSpeed: 0.85, range: 520, moveSpeed: 300, spellPower: 0.85 },

@@ -20,6 +20,8 @@ export interface SceneHooks {
   /** Spectator mode: currently selected hero (camera follows it). */
   selected?: () => Unit | null;
   onSelect?: (u: Unit | null) => void;
+  /** Spectator mode: show the next bot waiting on a boon. */
+  onNextBoon?: () => void;
 }
 
 interface FloatText {
@@ -122,6 +124,7 @@ export class ArenaScene extends Phaser.Scene {
           this.hooks.onSelect?.(null);
         }
         if (k === ' ') this.hooks.onPause();
+        if (k === 'n') this.hooks.onNextBoon?.();
         if (k === '1' || k === '2' || k === '3') this.hooks.onBoonKey(Number(k) - 1);
         return;
       }
@@ -149,6 +152,11 @@ export class ArenaScene extends Phaser.Scene {
       u.order = { kind: 'move', x: wp.x, y: wp.y };
       if (!dragging) this.world.fx({ kind: 'ring', x: wp.x, y: wp.y, r: 22, color: '#a5d6a7', duration: 0.3 });
     }
+  }
+
+  /** Spectator camera jump (minimap clicks). */
+  lookAt(x: number, y: number) {
+    this.camPos = { x, y };
   }
 
   private layoutCamera() {

@@ -25,5 +25,5 @@ export const FIRST_WAVE = 12;
 export const WAVE_INTERVAL = 28;
 export const RANGED_THRESHOLD = 200;
 
-export const xpToNext = (level: number) => 100 + 45 * level;
+export const xpToNext = (level: number) => 140 + 62 * level;
 export const respawnTime = (level: number) => 4 + 1.5 * level;

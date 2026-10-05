@@ -228,11 +228,11 @@ const BASICS: AbilityDef[] = [
   },
   {
     id: 'gust', name: 'Gust', icon: '🌬️', color: '#b2ebf2', kind: 'basic', tags: ['knockback', 'damage'],
-    cooldown: 9, range: 700, ai: 'damage',
-    desc: (p) => `Send a wide gust that deals ${n(45 * p)} damage and knocks enemies back.`,
+    cooldown: 7, range: 700, ai: 'damage',
+    desc: (p) => `Send a wide gust that deals ${n(70 * p)} damage and knocks enemies back.`,
     cast: (w, u, c) => {
       w.projectile({ owner: u, dir: c.dir, speed: 950, range: 700, radius: 45, color: '#b2ebf2', pierce: true,
-        onHit: (t) => { w.damage(u, t, 45 * c.p, 'spell'); w.knockback(t, u.x, u.y, 260); } });
+        onHit: (t) => { w.damage(u, t, 70 * c.p, 'spell'); w.knockback(t, u.x, u.y, 260); } });
     },
   },
   {
@@ -321,10 +321,10 @@ const ULTS: AbilityDef[] = [
   {
     id: 'avatar', name: 'Avatar', icon: '🗿', color: '#ffcc80', kind: 'ult', tags: ['buff', 'attack speed', 'size'],
     cooldown: 60, range: 0, ai: 'self',
-    desc: (p, m) => `Grow huge for 8s: +${pct(0.3 * m)} attack damage and attack speed, +30% max health, and heal ${n(200 * p)}.`,
+    desc: (p, m) => `Grow huge for 10s: +${pct(0.45 * m)} attack damage and attack speed, +30% max health, 15% lifesteal, and heal ${n(250 * p)}.`,
     cast: (w, u, c) => {
-      w.addBuff(u, { id: 'avatar', duration: 8, mul: { ad: 0.3 * c.m, attackSpeed: 0.3 * c.m, maxHp: 0.3 }, add: { size: 0.35 } });
-      w.heal(u, 200 * c.p);
+      w.addBuff(u, { id: 'avatar', duration: 10, mul: { ad: 0.45 * c.m, attackSpeed: 0.45 * c.m, maxHp: 0.3 }, add: { size: 0.35, lifesteal: 0.15 } });
+      w.heal(u, 250 * c.p);
     },
   },
   {
@@ -339,14 +339,14 @@ const ULTS: AbilityDef[] = [
   {
     id: 'laser', name: 'Solar Beam', icon: '🔆', color: '#ffeb3b', kind: 'ult', tags: ['long range', 'damage'],
     cooldown: 50, range: 1400, ai: 'damage',
-    desc: (p) => `After 0.4s, fire a beam across a huge line dealing ${n(270 * p)} damage.`,
+    desc: (p) => `After 0.4s, fire a beam across a huge line dealing ${n(340 * p)} damage.`,
     cast: (w, u, c) => {
       const dir = { ...c.dir };
       w.fx({ kind: 'line', x: u.x, y: u.y, x2: u.x + dir.x * 1400, y2: u.y + dir.y * 1400, r: 0, color: '#fff9c4', duration: 0.4, width: 3 });
       w.schedule(0.4, () => {
         if (u.dead) return;
         w.fx({ kind: 'line', x: u.x, y: u.y, x2: u.x + dir.x * 1400, y2: u.y + dir.y * 1400, r: 0, color: '#ffeb3b', duration: 0.35, width: 40 });
-        w.lineHit(u, dir, 1400, 40, (e) => w.damage(u, e, 270 * c.p, 'spell'));
+        w.lineHit(u, dir, 1400, 55, (e) => w.damage(u, e, 340 * c.p, 'spell'));
       });
     },
   },
@@ -448,8 +448,8 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'giant', name: 'Giant Blood', icon: '🦣', color: '#8d6e63', kind: 'passive', tags: ['health', 'size'], cooldown: 0, range: 0,
-    desc: (_p, m) => `+${pct(0.25 * m)} max health. You are bigger.`,
-    mods: (m) => ({ mul: { maxHp: 0.25 * m }, add: { size: 0.25 } }),
+    desc: (_p, m) => `+${pct(0.2 * m)} max health. You are bigger.`,
+    mods: (m) => ({ mul: { maxHp: 0.2 * m }, add: { size: 0.25 } }),
   },
   {
     id: 'spellweaver', name: 'Spellweaver', icon: '📖', color: '#7986cb', kind: 'passive', tags: ['spell power', 'cooldowns'], cooldown: 0, range: 0,

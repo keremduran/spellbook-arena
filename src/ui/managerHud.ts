@@ -1,8 +1,9 @@
-import { xpToNext } from '../sim/constants';
+import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
 import { DIRECTIVES, RARITIES, SLOTS, type Directive, type GameEvent, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
 import { clear, el } from './dom';
-import { drawMinimap, pushFeed } from './hud';
+import { bestBoonIndex } from '../sim/boons';
+import { boonCards, drawMinimap, portrait, pushFeed } from './hud';
 
 const DIRECTIVE_LABEL: Record<Directive, string> = { auto: 'Auto', push: 'Push', farm: 'Farm', group: 'Group', retreat: 'Retreat' };
 const DIRECTIVE_ICON: Record<Directive, string> = { auto: '🤖', push: '⏩', farm: '🌾', group: '🫂', retreat: '🏃' };
@@ -13,6 +14,8 @@ const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60
 export class ManagerHud {
   root: HTMLElement;
   selected: Unit | null = null;
+  /** Set by main: move the spectator camera. */
+  onLook: ((x: number, y: number) => void) | null = null;
   speed = 2;
   paused = false;
   private kBlue = el('span.k-blue', { text: '0' });
@@ -26,7 +29,8 @@ export class ManagerHud {
   private selPanel = el('div.sel.hidden');
   private boons = el('div.boons.hidden');
   private acc = 1;
-  private boonKey = '';
+  private boonKey: string | null = null;
+  private boonFocusId: number | undefined;
 
   constructor(parent: HTMLElement, private world: World, onQuit: () => void) {
     this.pauseBtn = el('button', { onclick: () => this.togglePause() }, ['⏸']);
@@ -43,6 +47,11 @@ export class ManagerHud {
       this.boons,
       this.selPanel,
     ]);
+    this.minimap.addEventListener('pointerdown', (e) => {
+      const r = this.minimap.getBoundingClientRect();
+      this.select(null);
+      this.onLook?.(((e.clientX - r.left) / r.width) * MAP_W, ((e.clientY - r.top) / r.height) * MAP_H);
+    });
     parent.append(this.root);
     this.setSpeed(this.speed);
   }
@@ -79,13 +88,40 @@ export class ManagerHud {
     const u = this.boonTarget();
     if (!u) return;
     this.world.pickBoon(u, index);
-    this.boonKey = '';
+    this.afterBoonChange(u);
+  }
+
+  /** Bot takes its highest-rarity option itself. */
+  private letBotPick(u: Unit) {
+    this.world.pickBoon(u, bestBoonIndex(u.hero!.offers[0]));
+    this.afterBoonChange(u);
+  }
+
+  private afterBoonChange(u: Unit) {
+    if (!u.hero!.offers.length && this.boonFocusId === u.id) this.boonFocusId = undefined;
+    this.boonKey = null;
     this.renderBoons();
+    this.renderRoster();
     if (u === this.selected) this.renderSelected();
   }
 
+  /** Cycle through bots that are waiting on a boon (Tab-like, key N). */
+  nextBoonBot() {
+    const waiting = this.waiting();
+    if (waiting.length < 2) return;
+    const cur = this.boonTarget();
+    this.boonFocusId = waiting[(waiting.indexOf(cur!) + 1) % waiting.length].id;
+    this.renderBoons();
+  }
+
+  private waiting() {
+    return this.world.heroList.filter((h) => h.hero!.managed && h.hero!.offers.length);
+  }
+
   private boonTarget(): Unit | undefined {
-    const waiting = this.world.heroList.filter((h) => h.hero!.managed && h.hero!.offers.length);
+    const waiting = this.waiting();
+    const focused = waiting.find((h) => h.id === this.boonFocusId);
+    if (focused) return focused;
     if (this.selected && waiting.includes(this.selected)) return this.selected;
     return waiting[0];
   }
@@ -247,28 +283,26 @@ export class ManagerHud {
 
   private renderBoons() {
     const u = this.boonTarget();
-    const total = this.world.heroList.reduce((n, h) => n + (h.hero!.managed ? h.hero!.offers.length : 0), 0);
-    const key = u ? `${u.id}|${total}` : '';
+    const waiting = this.waiting();
+    const key = u ? `${u.id}|${waiting.map((h) => `${h.id}:${h.hero!.offers.length}`).join()}` : '';
     if (key === this.boonKey) return;
     this.boonKey = key;
     clear(this.boons);
     this.boons.classList.toggle('hidden', !u);
     if (!u) return;
     const h = u.hero!;
-    const offer = h.offers[0];
+    const tabs = waiting.length > 1
+      ? el('div.btabs', {}, waiting.map((w) => el(`button.btab${w === u ? '.on' : ''}`, { title: `${w.hero!.name}: ${w.hero!.offers.length} waiting`, onclick: () => { this.boonFocusId = w.id; this.renderBoons(); } }, [
+        portrait(w, 'sm'), el('span', { text: String(w.hero!.offers.length) }),
+      ])))
+      : el('div.hidden');
     this.boons.append(
       el('h3', {}, [
-        el('span', {}, [`Boon for ${h.def.icon} ${h.name} `, el('small', { text: `Lv ${h.level}` })]),
-        el('small', { text: total > 1 ? `${total - 1} more waiting · keys 1 2 3` : 'Keys 1 · 2 · 3' }),
+        el('span.bt', {}, [portrait(u), `${h.name} `, el('small', { text: `${h.def.name} · Lv ${h.level}` })]),
+        el('button.dir', { title: 'Let this bot take its best option', onclick: () => this.letBotPick(u) }, ['🤖 Let bot pick']),
       ]),
-      el('div.boon-row', {}, offer.map((b, i) => {
-        const r = RARITIES[b.rarity];
-        return el('button.boon', { style: `--rc:${r.color}`, onclick: () => this.pickBoon(i) }, [
-          el('span.bi', { text: b.def.icon }),
-          el('div', {}, [el('b', { text: b.def.name }), el('span.rar', { text: r.label }), el('p', { text: b.def.desc(r.mult) })]),
-          el('kbd.hk', { text: String(i + 1) }),
-        ]);
-      })),
+      tabs,
+      boonCards(h.offers[0], (i) => this.pickBoon(i)),
     );
   }
 }

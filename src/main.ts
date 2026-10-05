@@ -77,7 +77,9 @@ function startManager(settings: Settings) {
     speed: () => hud.speed,
     selected: () => hud.selected,
     onSelect: (u) => hud.select(u),
+    onNextBoon: () => hud.nextBoonBot(),
   });
+  hud.onLook = (x, y) => scene.lookAt(x, y);
   createGame(scene);
   (window as unknown as { __match: unknown }).__match = { world, hud };
 }

@@ -72,11 +72,11 @@ export class World {
 
   private buildBase(team: Team) {
     const tower = (hp: number): Stats => ({ ...emptyStats(), maxHp: hp, ad: 130, attackRange: 560, attackSpeed: 0.85 });
-    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(2600));
+    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(3400));
     outer.structure = { consecutive: 0 };
-    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(3000));
+    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(3900));
     inner.structure = { consecutive: 0, protectedBy: outer.id };
-    const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 4200 });
+    const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 5200 });
     nexus.structure = { consecutive: 0, protectedBy: inner.id };
   }
 
@@ -148,6 +148,11 @@ export class World {
       }
     }
     return best;
+  }
+
+  /** Backdoor protection: structures resist heroes unless the attackers' minions are close. */
+  minionsNear(team: Team, at: Unit, r: number) {
+    return this.units.some((c) => c.kind === 'creep' && !c.dead && c.team === team && len(c.x - at.x, c.y - at.y) < r);
   }
 
   power(u: Unit, rarity: Rarity) {
@@ -287,6 +292,7 @@ export class World {
   damage(src: Unit, tgt: Unit, amount: number, type: 'attack' | 'spell' | 'true', crit = false): number {
     if (tgt.dead || amount <= 0 || tgt.invulnUntil > this.time || this.isProtected(tgt)) return 0;
     if (src.stats.execute > 0 && tgt.hp / tgt.stats.maxHp < 0.35) amount *= 1 + src.stats.execute;
+    if (tgt.structure && src.kind === 'hero' && !this.minionsNear(src.team, tgt, 700)) amount *= 0.4;
     amount *= 1 - tgt.stats.damageReduction;
     if (tgt.shield > 0) {
       const absorbed = Math.min(tgt.shield, amount);
@@ -534,7 +540,7 @@ export class World {
 
     for (const h of this.heroList) {
       if (h.dead && t >= h.hero!.respawnAt) this.respawn(h);
-      if (h.hero!.level < MAX_LEVEL) this.gainXp(h, 3 * dt);
+      if (h.hero!.level < MAX_LEVEL) this.gainXp(h, 2 * dt);
     }
 
     for (const u of this.units) {

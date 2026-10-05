@@ -219,4 +219,9 @@ export type GameEvent =
   | { type: 'levelup'; unitId: number; level: number }
   | { type: 'offer'; unitId: number }
   | { type: 'structure'; team: Team; kind: UnitKind }
-  | { type: 'end'; winner: Team };
+  | { type: 'end'; winner: Team }
+  /** Presentation-only events (sound and particles). */
+  | { type: 'cast'; unitId: number; abilityId: string; kind: 'basic' | 'ult' | 'passive'; tags: string[]; color: string; x: number; y: number }
+  | { type: 'attack'; unitId: number; x: number; y: number; tx: number; ty: number; ranged: boolean; tower: boolean }
+  | { type: 'die'; unitId: number; kind: UnitKind; team: Team; x: number; y: number; r: number }
+  | { type: 'boom'; x: number; y: number; r: number; color: string };

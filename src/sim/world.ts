@@ -356,6 +356,7 @@ export class World {
       s.targetId = t.id;
     }
     const ranged = u.kind === 'tower' || u.stats.attackRange >= RANGED_THRESHOLD;
+    if (u.kind !== 'creep') this.events.push({ type: 'attack', unitId: u.id, x: u.x, y: u.y, tx: t.x, ty: t.y, ranged, tower: u.kind === 'tower' });
     if (ranged) {
       this.projectiles.push({
         id: this.nextId++, owner: u, team: u.team, x: u.x, y: u.y, vx: 0, vy: 0, speed: u.kind === 'tower' ? 1300 : 1100,
@@ -390,6 +391,7 @@ export class World {
     this.cooldownOverride = null;
     const ok = inst.def.cast(this, u, { aim, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult });
     if (ok === false) return false;
+    this.events.push({ type: 'cast', unitId: u.id, abilityId: inst.def.id, kind: inst.def.kind, tags: inst.def.tags, color: inst.def.color, x: u.x, y: u.y });
     u.facing = dir;
     if (inst.def.ai !== 'escape' && inst.def.ai !== 'heal') h.lastCombatAt = this.time;
     const cd = this.cooldownOverride ?? inst.def.cooldown;
@@ -402,6 +404,7 @@ export class World {
   private kill(victim: Unit, src: Unit) {
     if (victim.dead) return;
     victim.dead = true;
+    this.events.push({ type: 'die', unitId: victim.id, kind: victim.kind, team: victim.team, x: victim.x, y: victim.y, r: victim.radius });
     victim.hp = 0;
     victim.dash = undefined;
     const enemy = otherTeam(victim.team);
@@ -815,6 +818,7 @@ export class World {
     this.novas = this.novas.filter((n) => n.at > t);
     for (const n of due) {
       this.fx({ kind: 'burst', x: n.x, y: n.y, r: n.radius, color: n.color, duration: 0.35 });
+      this.events.push({ type: 'boom', x: n.x, y: n.y, r: n.radius, color: n.color });
       for (const e of this.enemiesNear(n.team, n.x, n.y, n.radius)) n.onHit(e);
     }
   }

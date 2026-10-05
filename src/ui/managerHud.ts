@@ -3,7 +3,7 @@ import { DIRECTIVES, RARITIES, SLOTS, type Directive, type GameEvent, type Team,
 import type { World } from '../sim/world';
 import { clear, el } from './dom';
 import { bestBoonIndex } from '../sim/boons';
-import { boonCards, drawMinimap, portrait, pushFeed } from './hud';
+import { boonCards, drawMinimap, portrait, pushFeed, soundButtons } from './hud';
 
 const DIRECTIVE_LABEL: Record<Directive, string> = { auto: 'Auto', push: 'Push', farm: 'Farm', group: 'Group', retreat: 'Retreat' };
 const DIRECTIVE_ICON: Record<Directive, string> = { auto: '🤖', push: '⏩', farm: '🌾', group: '🫂', retreat: '🏃' };
@@ -39,6 +39,7 @@ export class ManagerHud {
       el('div.topbar', {}, [this.kBlue, this.clock, this.kRed, el('div.speed', {}, [this.pauseBtn, ...this.speedBtns])]),
       el('div.topbtns', {}, [
         el('button.iconbtn', { title: 'Hide/show roster', onclick: () => this.roster.classList.toggle('collapsed') }, ['👥']),
+        ...soundButtons(),
         el('button.iconbtn', { title: 'Quit', onclick: onQuit }, ['🚪']),
       ]),
       this.roster,

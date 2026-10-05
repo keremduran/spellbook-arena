@@ -1,4 +1,5 @@
 import { autoAim } from '../game/aim';
+import { sfx } from '../game/audio';
 import { MAP_H, MAP_W, xpToNext } from '../sim/constants';
 import { RARITIES, SLOTS, type BoonInst, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
@@ -24,6 +25,10 @@ export class Hud {
   private scoreboard = el('div.scoreboard.hidden');
   private acc = 1;
   private offerShown = -1;
+  /** Set by main: touch drag-to-aim preview in the scene. */
+  onAim: ((slot: Slot | null, dir: { x: number; y: number } | null) => void) | null = null;
+  /** Set by main: celebrate a boon pick. */
+  onBoonPicked: (() => void) | null = null;
 
   constructor(parent: HTMLElement, private world: World, private player: Unit, onPause: () => void) {
     const h = player.hero!;
@@ -31,22 +36,43 @@ export class Hud {
       const inst = h.abilities[slot];
       const cd = el('div.cd.hidden');
       const btn = el(`button.slot${slot === 'P' ? '.passive' : ''}`, {
+        'data-slot': slot,
         style: `--rc:${inst ? RARITIES[inst.rarity].color : '#555'}`,
         title: inst ? `${inst.def.name} (${RARITIES[inst.rarity].label})\n${inst.def.desc(world.power(player, inst.rarity), RARITIES[inst.rarity].mult)}` : '',
-        onpointerdown: (e: Event) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (slot !== 'P' && inst) this.world.castAbility(player, slot, autoAim(world, player, inst.def));
-        },
       }, [el('span.key', { text: slot }), inst?.def.icon ?? '', cd]);
+      if (slot !== 'P' && inst) this.bindAimButton(btn, slot);
       this.slots[slot] = { btn, cd };
       return btn;
     });
+    // Big attack button for touch: target the nearest enemy, heroes first.
+    const atk = el('button.slot.atk', { 'data-slot': 'A', title: 'Attack nearest enemy' }, ['⚔️']);
+    atk.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      atk.classList.add('pressed');
+      const u = this.player;
+      let best: Unit | undefined;
+      let bestScore = Infinity;
+      for (const t of this.world.units) {
+        if (!this.world.attackable(u, t)) continue;
+        const d = Math.hypot(t.x - u.x, t.y - u.y);
+        if (d > u.stats.attackRange + 450) continue;
+        const score = d - (t.kind === 'hero' ? 350 : 0);
+        if (score < bestScore) {
+          bestScore = score;
+          best = t;
+        }
+      }
+      if (best) u.order = { kind: 'attack', id: best.id };
+    });
+    atk.addEventListener('pointerup', () => atk.classList.remove('pressed'));
+    atk.addEventListener('pointercancel', () => atk.classList.remove('pressed'));
 
     this.root = el('div.hud', {}, [
       el('div.topbar', {}, [this.kBlue, this.clock, this.kRed]),
       el('div.topbtns', {}, [
         el('button.iconbtn', { title: 'Scoreboard', onclick: () => this.scoreboard.classList.toggle('hidden') }, ['📊']),
+        ...soundButtons(),
         el('button.iconbtn', { title: 'Pause', onclick: () => onPause() }, ['⏸']),
       ]),
       this.feed,
@@ -63,7 +89,7 @@ export class Hud {
             this.statline,
           ]),
         ]),
-        el('div.slots', {}, slotEls),
+        el('div.slots', {}, [...slotEls, atk]),
       ]),
     ]);
     parent.append(this.root);
@@ -71,6 +97,47 @@ export class Hud {
 
   destroy() {
     this.root.remove();
+  }
+
+  /**
+   * Tap = quick cast with auto-aim. Drag = aim in that direction (preview in the scene),
+   * release to cast. Drag back onto the button to cancel.
+   */
+  private bindAimButton(btn: HTMLElement, slot: Slot) {
+    let start: { x: number; y: number; id: number } | null = null;
+    let dir: { x: number; y: number } | null = null;
+    const DEAD = 22;
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      dir = null;
+      btn.setPointerCapture(e.pointerId);
+      btn.classList.add('pressed');
+    });
+    btn.addEventListener('pointermove', (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      const d = Math.hypot(dx, dy);
+      dir = d > DEAD ? { x: dx / d, y: dy / d } : null;
+      this.onAim?.(dir ? slot : null, dir);
+    });
+    const finish = (e: PointerEvent, cancelled: boolean) => {
+      if (!start || e.pointerId !== start.id) return;
+      start = null;
+      btn.classList.remove('pressed');
+      this.onAim?.(null, null);
+      if (cancelled) return;
+      const u = this.player;
+      const inst = u.hero!.abilities[slot];
+      if (!inst) return;
+      const range = Math.max(inst.def.range, 250);
+      const aim = dir ? { x: u.x + dir.x * range, y: u.y + dir.y * range } : autoAim(this.world, u, inst.def);
+      this.world.castAbility(u, slot, aim);
+    };
+    btn.addEventListener('pointerup', (e) => finish(e, false));
+    btn.addEventListener('pointercancel', (e) => finish(e, true));
   }
 
   onEvents(events: GameEvent[]) {
@@ -97,6 +164,7 @@ export class Hud {
     this.world.pickBoon(this.player, index);
     this.offerShown = -1;
     this.renderBoons();
+    this.onBoonPicked?.();
   }
 
   showScoreboard(show: boolean) {
@@ -104,8 +172,26 @@ export class Hud {
     if (show) this.renderScoreboard();
   }
 
-  /** Called every frame; refreshes the DOM about 10 times a second. */
+  /** Called every frame: cooldown sweeps update every frame, the rest about 10 times a second. */
   update(dt: number) {
+    const u0 = this.player;
+    for (const slot of SLOTS) {
+      const inst = u0.hero!.abilities[slot];
+      if (!inst || slot === 'P') continue;
+      const left = inst.readyAt - this.world.time;
+      const total = Math.max(0.1, inst.def.cooldown * (1 - u0.stats.cdr));
+      const { btn, cd } = this.slots[slot];
+      const cooling = left > 0 || u0.dead;
+      cd.classList.toggle('hidden', !cooling);
+      cd.style.setProperty('--p', `${u0.dead ? 100 : Math.min(100, (left / total) * 100)}%`);
+      cd.textContent = u0.dead ? '' : left > 0 ? (left < 1 ? left.toFixed(1) : String(Math.ceil(left))) : '';
+      if (btn.dataset.ready === '0' && !cooling) {
+        btn.classList.remove('ready-pop');
+        void btn.offsetWidth;
+        btn.classList.add('ready-pop');
+      }
+      btn.dataset.ready = cooling ? '0' : '1';
+    }
     this.acc += dt;
     if (this.acc < 0.1) return;
     this.acc = 0;
@@ -122,13 +208,6 @@ export class Hud {
     const s = u.stats;
     this.statline.textContent = `⚔ ${Math.round(s.ad)}  ⚡ ${s.attackSpeed.toFixed(2)}  👟 ${Math.round(s.moveSpeed)}  🔮 ${Math.round(s.spellPower * 100)}%  ⏱ ${Math.round(s.cdr * 100)}%`;
 
-    for (const slot of SLOTS) {
-      const inst = h.abilities[slot];
-      const { cd } = this.slots[slot];
-      const left = inst ? inst.readyAt - w.time : 0;
-      cd.classList.toggle('hidden', !(left > 0) && !u.dead);
-      cd.textContent = u.dead ? '' : left > 0 ? (left < 1 ? left.toFixed(1) : String(Math.ceil(left))) : '';
-    }
 
     this.death.classList.toggle('hidden', !u.dead);
     if (u.dead) {
@@ -236,4 +315,23 @@ export function boonCards(offer: BoonInst[], onPick: (i: number) => void) {
       el('kbd.hk', { text: String(i + 1) }),
     ]);
   }));
+}
+
+/** Sound effects and music toggles for the HUD top bar. */
+export function soundButtons() {
+  const sfxBtn = el('button.iconbtn', { title: 'Sound effects' }, [sfx.sfxOn ? '🔊' : '🔇']);
+  const musicBtn = el('button.iconbtn', { title: 'Music' }, ['🎵']);
+  musicBtn.classList.toggle('off', !sfx.musicOn);
+  sfxBtn.addEventListener('click', () => {
+    sfx.unlock();
+    sfx.setSfx(!sfx.sfxOn);
+    sfxBtn.textContent = sfx.sfxOn ? '🔊' : '🔇';
+  });
+  musicBtn.addEventListener('click', () => {
+    sfx.unlock();
+    sfx.setMusic(!sfx.musicOn);
+    if (sfx.musicOn) sfx.startMusic();
+    musicBtn.classList.toggle('off', !sfx.musicOn);
+  });
+  return [sfxBtn, musicBtn];
 }

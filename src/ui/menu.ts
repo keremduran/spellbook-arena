@@ -1,5 +1,7 @@
 import { el } from './dom';
 
+export const VERSION = 'v2 · graphics & sound';
+
 export interface Settings {
   mode: 'play' | 'manage';
   /** In manager mode: whose boons the user picks. */
@@ -57,6 +59,7 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
   const screen: HTMLElement = el('div.screen', {}, [
     el('div.menu', {}, [
       el('h1.title', { text: 'Spellbook Arena' }),
+      el('div.ver', { text: VERSION }),
       el('p.tag', { text: 'Random hero. Draft any spell for every key. Fight in a single-lane brawl and stack Hades-style boons.' }),
       el('div.panel', {}, [
         el('div.setting', {}, [

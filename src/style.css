@@ -363,3 +363,40 @@ button.dir.dead { opacity: 0.45; }
   .pface.md { width: 24px; height: 24px; font-size: 13px; }
   .btabs { margin-bottom: 4px; }
 }
+
+/* ---------------------------------------------------------------- v2: cooldown sweeps, sound toggles, phone controls */
+
+.slot { transition: transform 0.08s; }
+.slot.pressed { transform: scale(0.92); }
+.slot .cd { background: conic-gradient(rgba(0, 0, 0, 0.72) var(--p, 100%), rgba(0, 0, 0, 0.12) 0); }
+.slot.ready-pop { animation: readypop 0.35s ease-out; }
+@keyframes readypop { 0% { box-shadow: 0 0 0 0 var(--rc); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--rc) 50%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+.iconbtn.off { opacity: 0.4; }
+.slot.atk { display: none; }
+
+body.touch .hud .bottom { display: contents; }
+body.touch .hud .me { position: absolute; left: max(12px, env(safe-area-inset-left)); top: 64px; }
+body.touch .hud .slots { display: block; position: absolute; right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); width: 240px; height: 230px; }
+body.touch .hud .slot { position: absolute; width: 66px; height: 66px; border-radius: 50%; font-size: 28px; touch-action: none; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45); }
+body.touch .hud .slot .key { left: 50%; top: auto; bottom: -2px; transform: translateX(-50%); font-size: 10px; }
+body.touch .hud .slot.atk { display: grid; right: 0; bottom: 0; width: 96px; height: 96px; font-size: 40px; --rc: #ffca28; background: radial-gradient(circle at 40% 35%, #3a2d10, #1a140a); }
+body.touch .hud .slot[data-slot="Q"] { right: 112px; bottom: 0; }
+body.touch .hud .slot[data-slot="W"] { right: 104px; bottom: 80px; }
+body.touch .hud .slot[data-slot="E"] { right: 52px; bottom: 146px; }
+body.touch .hud .slot[data-slot="R"] { right: -4px; bottom: 110px; width: 72px; height: 72px; }
+body.touch .hud .slot.passive { right: 178px; bottom: 112px; width: 44px; height: 44px; font-size: 20px; }
+@media (max-height: 520px) {
+  body.touch .hud .slots { transform: scale(0.86); transform-origin: bottom right; }
+  body.touch .hud .me { top: 58px; }
+}
+
+.rotate { display: none; }
+@media (orientation: portrait) {
+  body.touch .rotate {
+    display: grid; place-items: center; position: fixed; inset: 0; z-index: 50; background: rgba(5, 8, 12, 0.92);
+    text-align: center; font-size: 18px; padding: 24px; color: var(--text);
+  }
+  body.touch .rotate b { display: block; font-size: 54px; margin-bottom: 10px; animation: spinphone 1.6s ease-in-out infinite; }
+  @keyframes spinphone { 0%, 30% { transform: rotate(0); } 60%, 100% { transform: rotate(-90deg); } }
+}
+.ver { color: var(--muted); font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; margin-top: 4px; }

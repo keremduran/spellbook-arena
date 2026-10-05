@@ -6,6 +6,7 @@ import { HEROES, type HeroDef } from './sim/heroes';
 import { Rng } from './sim/rng';
 import { RARITIES, SLOTS, type Team, type Unit } from './sim/types';
 import { World } from './sim/world';
+import { sfx } from './game/audio';
 import { el } from './ui/dom';
 import { showDraft } from './ui/draftScreen';
 import { Hud } from './ui/hud';
@@ -16,6 +17,15 @@ import { createJoystick, isTouchDevice } from './ui/touch';
 const ui = document.getElementById('ui')!;
 const params = new URLSearchParams(location.search);
 if (isTouchDevice()) document.body.classList.add('touch');
+
+// Audio can only start after a user gesture; UI buttons get a soft click.
+document.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
+ui.addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).closest('button')) sfx.play('click', 0.5);
+});
+
+const rotateHint = el('div.rotate', {}, [el('div', {}, [el('b', { text: '📱' }), 'Turn your phone sideways to play']) ]);
+
 
 let game: Phaser.Game | null = null;
 
@@ -45,6 +55,7 @@ function startManager(settings: Settings) {
 
   let ended = false;
   const quit = () => {
+    sfx.stopMusic();
     hud.destroy();
     end?.remove();
     game?.destroy(true);
@@ -59,6 +70,7 @@ function startManager(settings: Settings) {
       const e = events.find((x) => x.type === 'end');
       if (e && e.type === 'end' && !ended) {
         ended = true;
+        setTimeout(() => sfx.play('victory'), 1000);
         end = el('div.screen.overlay', {}, [
           el('div.endbox.panel', {}, [
             el(`h1.title.${e.winner === 'blue' ? 'win' : 'lose'}`, { text: `${e.winner === 'blue' ? 'Blue' : 'Red'} wins` }),
@@ -81,6 +93,7 @@ function startManager(settings: Settings) {
   });
   hud.onLook = (x, y) => scene.lookAt(x, y);
   createGame(scene);
+  if (sfx.musicOn) sfx.startMusic();
   (window as unknown as { __match: unknown }).__match = { world, hud };
 }
 
@@ -120,6 +133,7 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
 
   const hud = new Hud(ui, world, player, togglePause);
   const joystick = isTouchDevice() ? createJoystick(hud.root, player) : null;
+  ui.append(rotateHint);
   let ended = false;
 
   const scene = new ArenaScene(world, player, {
@@ -128,6 +142,7 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
       const end = events.find((e) => e.type === 'end');
       if (end && end.type === 'end' && !ended) {
         ended = true;
+        setTimeout(() => sfx.play(end.winner === player.team ? 'victory' : 'defeat'), 900);
         setTimeout(() => showEnd(world, player, end.winner), 1200);
       }
     },
@@ -138,9 +153,14 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
     isPaused: () => paused,
   });
 
+  hud.onAim = (slot, dir) => scene.setAim(slot, dir);
+  hud.onBoonPicked = () => scene.vis?.boonPicked(player);
   createGame(scene);
+  if (sfx.musicOn) sfx.startMusic();
 
   const teardown = () => {
+    sfx.stopMusic();
+    rotateHint.remove();
     hud.destroy();
     joystick?.remove();
     game?.destroy(true);

@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.3 · minions path around towers, tankier units';
+export const VERSION = 'v3.4 · tankier skills, more kill XP';
 
 export interface Settings {
   mode: 'play' | 'manage';

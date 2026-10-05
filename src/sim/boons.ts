@@ -27,14 +27,14 @@ const n = (x: number) => Math.round(x);
 export const STAT_BOONS: BoonDef[] = [
   { id: 'swift', name: 'Swift Strikes', icon: '⚡', kind: 'stat', desc: (m) => `+${pct(0.12 * m)} attack speed`, mods: (m) => ({ mul: { attackSpeed: 0.12 * m } }) },
   { id: 'fleet', name: 'Fleet of Foot', icon: '👟', kind: 'stat', desc: (m) => `+${pct(0.07 * m)} move speed`, mods: (m) => ({ mul: { moveSpeed: 0.07 * m } }) },
-  { id: 'vitality', name: 'Vitality', icon: '❤️', kind: 'stat', desc: (m) => `+${pct(0.1 * m)} max health`, mods: (m) => ({ mul: { maxHp: 0.1 * m } }) },
+  { id: 'vitality', name: 'Vitality', icon: '❤️', kind: 'stat', desc: (m) => `+${pct(0.12 * m)} max health`, mods: (m) => ({ mul: { maxHp: 0.12 * m } }) },
   { id: 'might', name: 'Might', icon: '💪', kind: 'stat', desc: (m) => `+${pct(0.1 * m)} attack damage`, mods: (m) => ({ mul: { ad: 0.1 * m } }) },
   { id: 'arcana', name: 'Arcana', icon: '🔮', kind: 'stat', desc: (m) => `+${pct(0.12 * m)} spell power`, mods: (m) => ({ mul: { spellPower: 0.12 * m } }) },
   { id: 'haste', name: 'Haste', icon: '⏱️', kind: 'stat', desc: (m) => `+${pct(0.06 * m)} cooldown reduction`, mods: (m) => ({ add: { cdr: 0.06 * m } }) },
   { id: 'vampirism', name: 'Vampirism', icon: '🩸', kind: 'stat', desc: (m) => `+${pct(0.05 * m)} lifesteal`, mods: (m) => ({ add: { lifesteal: 0.05 * m } }) },
   { id: 'spell_thirst', name: 'Spell Thirst', icon: '🍷', kind: 'stat', desc: (m) => `Abilities heal you for ${pct(0.08 * m)} of their damage`, mods: (m) => ({ add: { spellVamp: 0.08 * m } }) },
   { id: 'precision', name: 'Precision', icon: '🎯', kind: 'stat', desc: (m) => `+${pct(0.08 * m)} critical strike chance`, mods: (m) => ({ add: { critChance: 0.08 * m } }) },
-  { id: 'bulwark', name: 'Bulwark', icon: '🛡️', kind: 'stat', desc: (m) => `Take ${pct(0.05 * m)} less damage`, mods: (m) => ({ add: { damageReduction: 0.05 * m } }) },
+  { id: 'bulwark', name: 'Bulwark', icon: '🛡️', kind: 'stat', desc: (m) => `Take ${pct(0.06 * m)} less damage`, mods: (m) => ({ add: { damageReduction: 0.06 * m } }) },
 ];
 
 export const EFFECT_BOONS: BoonDef[] = [
@@ -52,7 +52,7 @@ export const EFFECT_BOONS: BoonDef[] = [
   { id: 'detonate', effect: 'detonate', name: 'Detonate', icon: '💣', kind: 'effect', desc: (m) => `Enemies you kill explode for ${pct(Math.min(0.5, 0.15 * m))} of their max health to nearby enemies.` },
   { id: 'momentum', effect: 'momentum', name: 'Momentum', icon: '🌪️', kind: 'effect', desc: (m) => `Takedowns give ${pct(0.35 * m)} move speed and attack speed for 4s.` },
   { id: 'secondWind', effect: 'secondWind', name: 'Second Wind', icon: '🪽', kind: 'effect', desc: (m) => `Once per life, survive a killing blow and become untouchable for ${(1 + 0.5 * m).toFixed(1)}s.` },
-  { id: 'bulwarkCast', effect: 'bulwarkCast', name: 'Spellshield', icon: '🔰', kind: 'effect', desc: (m) => `Casting an ability shields you for ${n(40 * m)} for 2s.` },
+  { id: 'bulwarkCast', effect: 'bulwarkCast', name: 'Spellshield', icon: '🔰', kind: 'effect', desc: (m) => `Casting an ability shields you for ${n(50 * m)} for 2.5s.` },
 ];
 
 export const BOONS: BoonDef[] = [...STAT_BOONS, ...EFFECT_BOONS];

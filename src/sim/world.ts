@@ -32,6 +32,9 @@ export interface HeroSetup {
 
 const len = (x: number, y: number) => Math.hypot(x, y);
 const MINION_POWER = 1.15;
+/** XP for taking down a hero of the given level (raised so winning fights snowballs into boons). */
+const KILL_XP = (level: number) => 150 + 36 * level;
+const ASSIST_XP = (level: number) => 75 + 19 * level;
 /** Extra minion health on top of MINION_POWER. */
 const MINION_HP = 1.1;
 
@@ -491,7 +494,7 @@ export class World {
     const ef = h.effects;
     if (inst.def.kind === 'ult' && ef.overcharge) cd *= 1 - Math.min(0.6, 0.3 * ef.overcharge);
     inst.readyAt = this.time + cd * (1 - u.stats.cdr);
-    if (ef.bulwarkCast) this.shield(u, 40 * ef.bulwarkCast * levelScale(h.level), 2);
+    if (ef.bulwarkCast) this.shield(u, 50 * ef.bulwarkCast * levelScale(h.level), 2.5);
     if (ef.echo && inst.def.kind === 'basic' && this.rng.next() < Math.min(1, 0.3 * ef.echo)) {
       const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
       this.schedule(0.3, () => {
@@ -544,13 +547,13 @@ export class World {
       this.kills[enemy]++;
       if (killer?.hero) {
         killer.hero.kills++;
-        this.gainXp(killer, 110 + 28 * vh.level);
+        this.gainXp(killer, KILL_XP(vh.level));
       }
       for (const [id, at] of victim.damagedBy) {
         const a = this.unit(id);
         if (a?.hero && a !== killer && a.team !== victim.team && this.time - at < 10) {
           a.hero.assists++;
-          this.gainXp(a, 55 + 14 * vh.level);
+          this.gainXp(a, ASSIST_XP(vh.level));
         }
       }
       const takedown = [killer, ...[...victim.damagedBy.keys()].map((id) => this.unit(id))].filter((a, i, arr): a is Unit => !!a?.hero && a.team !== victim.team && arr.indexOf(a) === i);

@@ -176,14 +176,26 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
     const won = winner === me.team;
     const build = [
       ...SLOTS.map((s) => h.abilities[s]).filter((a) => !!a).map((a) => el('span', { style: `--rc:${RARITIES[a!.rarity].color}`, text: `${a!.def.icon} ${a!.def.name}` })),
-      ...h.boons.map((b) => el('span', { style: `--rc:${RARITIES[b.rarity].color}`, text: `${b.def.icon} ${b.def.name}` })),
     ];
+    // Boons as compact icon chips, duplicates merged (hover for the name).
+    const groups = new Map<string, { b: (typeof h.boons)[number]; n: number }>();
+    for (const b of h.boons) {
+      const g = groups.get(b.def.id);
+      if (!g) groups.set(b.def.id, { b, n: 1 });
+      else {
+        g.n++;
+        if (RARITIES[b.rarity].mult > RARITIES[g.b.rarity].mult) g.b = b;
+      }
+    }
+    const boonChips = [...groups.values()].map(({ b, n }) =>
+      el('span.boonchip', { style: `--rc:${RARITIES[b.rarity].color}`, title: b.def.name, text: n > 1 ? `${b.def.icon}×${n}` : b.def.icon }));
     const box = el('div.screen.overlay', {}, [
       el('div.endbox.panel', {}, [
         el(`h1.title.${won ? 'win' : 'lose'}`, { text: won ? 'Victory' : 'Defeat' }),
         el('p.summary', { text: `${Math.floor(w.time / 60)} min · ${h.def.name} level ${h.level} · ${h.kills} / ${h.deaths} / ${h.assists}` }),
-        el('div.build', {}, build),
         damageTable(w, me),
+        el('div.build', {}, build),
+        el('div.build.buildboons', {}, boonChips),
         el('button.btn-primary', { onclick: () => { box.remove(); teardown(); menu(); } }, ['Play again']),
       ]),
     ]);

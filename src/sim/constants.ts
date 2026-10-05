@@ -40,7 +40,7 @@ export const RUNE_INTERVAL = 50;
 export const RUNE_RADIUS = 34;
 
 /** Takedown boons: every Nth kill or assist earns a boon, whatever your level. */
-export const KILLS_PER_BOON = 4;
+export const KILLS_PER_BOON = 5;
 export const ASSISTS_PER_BOON = 8;
 
 export type Difficulty = 'easy' | 'normal' | 'hard';

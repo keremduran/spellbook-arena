@@ -486,7 +486,7 @@ body.touch .hud:not(.manager) .feed { top: auto; right: auto; left: 50%; transfo
 /* ---------------------------------------------------------------- damage meters */
 
 .meter { min-width: 86px; white-space: nowrap; }
-.meter .mnum { display: inline-block; width: 38px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.meter .mnum { display: inline-block; width: 44px; font-variant-numeric: tabular-nums; font-weight: 700; }
 .meter .mbar { display: inline-block; width: 44px; height: 6px; border-radius: 3px; background: #0a0e12; vertical-align: middle; overflow: hidden; }
 .meter .mbar i { display: block; height: 100%; }
 .meter.dealt .mbar i { background: linear-gradient(90deg, #ff8a65, #ffca28); }
@@ -503,4 +503,20 @@ body.touch .hud:not(.manager) .feed { top: auto; right: auto; left: 50%; transfo
   .meter .mnum { width: 30px; }
   .meter .mbar { width: 28px; }
   .dmgtable { font-size: 11px; max-height: 38vh; }
+}
+.dmgverdict { margin: 0 0 8px; color: var(--muted); font-size: 13px; text-align: center; }
+.dmgverdict b { color: #ffe082; }
+
+.endbox { max-width: 860px; max-height: calc(100dvh - 24px); overflow: auto; }
+.dmgtable td, .dmgtable th { white-space: nowrap; }
+.build.buildboons { gap: 6px; }
+.build .boonchip { padding: 2px 6px; font-size: 15px; }
+@media (max-height: 520px) {
+  .endbox { padding: 12px 16px; }
+  .endbox .title { font-size: 34px; }
+  .endbox .summary { margin: 2px 0 8px; }
+  .build { margin-bottom: 8px; }
+  .build span { font-size: 11px; padding: 2px 6px; }
+  .dmgverdict { font-size: 11px; }
+  .dmgtable { max-height: none; }
 }

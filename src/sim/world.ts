@@ -36,17 +36,19 @@ const pctFmt = (v: number) => `${Math.round(v * 100)}%`;
 const intFmt = (v: number) => String(Math.round(v));
 /** Effect boons with a ceiling: [value per 1.0 of power, maximum]. Matches the numbers in boons.ts / world. */
 const EFFECT_CAPS: Partial<Record<EffectId, [number, number]>> = {
-  frost: [0.22, 0.6], cleave: [0.4, 1], ricochet: [0.45, 0.9], echo: [0.3, 1], overcharge: [0.3, 0.6], detonate: [0.15, 0.5],
+  frost: [0.22, 0.45], cleave: [0.4, 1], ricochet: [0.45, 0.9], echo: [0.3, 0.6], overcharge: [0.3, 0.6], detonate: [0.15, 0.5],
 };
 /** Stats shown on boon cards: [key, label, format, cap]. */
 const STAT_PREVIEW: [keyof Stats, string, (v: number) => string, number?][] = [
   ['maxHp', 'Max health', intFmt], ['hpRegen', 'Health regen', (v) => `${v.toFixed(1)}/s`], ['regenPct', 'Regen', (v) => `${(v * 100).toFixed(1)}% hp/s`, 0.15],
-  ['recoup', 'Heal back from damage', pctFmt, 0.8], ['damageReduction', 'Damage taken reduced by', pctFmt, 0.7], ['ad', 'Attack damage', intFmt],
+  ['recoup', 'Heal back from damage', pctFmt, 0.8], ['damageReduction', 'Damage taken reduced by', pctFmt, 0.55], ['ad', 'Attack damage', intFmt],
   ['attackSpeed', 'Attack speed', (v) => v.toFixed(2)], ['attackRange', 'Attack range', intFmt], ['moveSpeed', 'Move speed', intFmt, 650],
   ['spellPower', 'Spell power', pctFmt], ['cdr', 'Cooldown reduction', pctFmt, 0.6], ['critChance', 'Crit chance', pctFmt, 1],
   ['lifesteal', 'Lifesteal', pctFmt], ['spellVamp', 'Spell vamp', pctFmt], ['onHitDamage', 'On-hit damage', intFmt],
   ['thorns', 'Thorns', pctFmt], ['execute', 'Execute bonus', pctFmt],
 ];
+/** Extra damage taken by a hero on a kill streak: +5% per kill past 4, up to +40%. */
+export const bountyBonus = (streak: number) => Math.min(0.4, Math.max(0, streak - 4) * 0.05);
 const MINION_POWER = 1.15;
 /** XP for taking down a hero of the given level (raised so winning fights snowballs into boons). */
 const KILL_XP = (level: number) => 150 + 36 * level;
@@ -68,6 +70,8 @@ export class World {
   rng: Rng;
   /** Set by an ability's cast to replace its cooldown for this cast only. */
   cooldownOverride: number | null = null;
+  /** Damage multiplier while a projectile hit resolves. */
+  dmgScale = 1;
   rune = { x: MAP_W / 2, y: LANE_Y, active: false, nextAt: RUNE_FIRST };
   playerTeam: Team | null = null;
   private firstBlood = false;
@@ -99,11 +103,11 @@ export class World {
 
   private buildBase(team: Team) {
     const tower = (hp: number): Stats => ({ ...emptyStats(), maxHp: hp, ad: 130, attackRange: 560, attackSpeed: 0.85 });
-    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(5900));
+    const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(5000));
     outer.structure = { consecutive: 0 };
-    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(6300));
+    const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(5400));
     inner.structure = { consecutive: 0, protectedBy: outer.id };
-    const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 6500 });
+    const nexus = this.makeUnit('nexus', team, mirrorX(team, STRUCTURE_X.nexus), LANE_Y, 62, { ...emptyStats(), maxHp: 5500 });
     nexus.structure = { consecutive: 0, protectedBy: inner.id };
   }
 
@@ -119,7 +123,7 @@ export class World {
       def: setup.def, name: setup.name, isPlayer: !!setup.isPlayer, managed: !!setup.managed, directive: 'auto', level: 1, xp: 0, kills: 0, deaths: 0, assists: 0,
       respawnAt: 0, abilities, boons: [], offers: [], attackCount: 0, lastCombatAt: -99, moveDir: null,
       retreating: false, nextThink: 0, laneOffset: this.rng.range(-170, 170),
-      effects: {}, secondWindUsed: false, nextThunder: 0, nextStatic: 0, streak: 0, multi: 0, multiAt: -99, dmgDealt: 0, dmgTaken: 0,
+      effects: {}, secondWindUsed: false, nextThunder: 0, nextStatic: 0, streak: 0, multi: 0, multiAt: -99, dmgDealt: 0, dmgTaken: 0, dmgBuildings: 0, dmgTotal: 0,
     };
     if (setup.isPlayer) this.playerTeam = setup.team;
     this.recompute(u);
@@ -203,24 +207,30 @@ export class World {
     } else tgt.dots.push({ src, dps, until: this.time + dur });
   }
 
+  /** Comeback bonus for a team trailing on kills: +1.25% per kill behind past 8, up to 25%. */
+  underdog(team: Team) {
+    const behind = team === 'blue' ? this.kills.red - this.kills.blue : this.kills.blue - this.kills.red;
+    return Math.min(0.25, Math.max(0, behind - 8) * 0.0125);
+  }
+
   power(u: Unit, rarity: Rarity) {
     return RARITIES[rarity].mult * u.stats.spellPower * levelScale(u.hero?.level ?? 1);
   }
 
   // ------------------------------------------------------------------ effects API (used by abilities)
 
-  projectile(o: { owner: Unit; dir: Vec; speed: number; range: number; radius: number; color: string; pierce?: boolean; onHit: (t: Unit) => void; noSplit?: boolean }) {
+  projectile(o: { owner: Unit; dir: Vec; speed: number; range: number; radius: number; color: string; pierce?: boolean; onHit: (t: Unit) => void; noSplit?: boolean; scale?: number }) {
     const split = o.noSplit ? 0 : this.effect(o.owner, 'split');
     if (split > 0) {
       const angles = split >= 1.8 ? [-0.42, -0.21, 0.21, 0.42] : [-0.25, 0.25];
       for (const a of angles) {
         const dir = { x: o.dir.x * Math.cos(a) - o.dir.y * Math.sin(a), y: o.dir.x * Math.sin(a) + o.dir.y * Math.cos(a) };
-        this.projectile({ ...o, dir, noSplit: true });
+        this.projectile({ ...o, dir, noSplit: true, scale: 0.5 });
       }
     }
     this.projectiles.push({
       id: this.nextId++, owner: o.owner, team: o.owner.team, x: o.owner.x, y: o.owner.y, vx: o.dir.x * o.speed, vy: o.dir.y * o.speed,
-      speed: o.speed, radius: o.radius, range: o.range, traveled: 0, color: o.color, pierce: !!o.pierce, hit: new Set(), onHit: o.onHit,
+      speed: o.speed, radius: o.radius, range: o.range, traveled: 0, color: o.color, pierce: !!o.pierce, hit: new Set(), onHit: o.onHit, scale: o.scale,
     });
   }
 
@@ -300,9 +310,9 @@ export class World {
     }
   }
 
-  /** Shields stack (up to the unit's max health); the longest remaining duration is kept. */
+  /** Shields stack (up to 60% of the unit's max health); the longest remaining duration is kept. */
   shield(u: Unit, amount: number, dur: number) {
-    u.shield = Math.min(u.stats.maxHp, u.shield + amount);
+    u.shield = Math.min(u.stats.maxHp * 0.6, u.shield + amount);
     u.shieldUntil = Math.max(u.shieldUntil, this.time + dur);
   }
 
@@ -359,24 +369,33 @@ export class World {
   /** Deals damage and returns the amount actually dealt to health. */
   damage(src: Unit, tgt: Unit, amount: number, type: 'attack' | 'spell' | 'true', crit = false): number {
     if (tgt.dead || amount <= 0 || tgt.invulnUntil > this.time || this.isProtected(tgt)) return 0;
+    amount *= this.dmgScale;
     if (src.stats.execute > 0 && tgt.hp / tgt.stats.maxHp < 0.35) amount *= 1 + src.stats.execute;
     if (tgt.structure && src.kind === 'hero' && !this.minionsNear(src.team, tgt, 700)) amount *= 0.4;
     // Structures harden against high-level heroes, so snowballing wins fights, not instant sieges.
-    if (tgt.structure && src.hero) amount /= 1 + 0.1 * (src.hero.level - 1);
+    if (tgt.structure && src.hero) amount /= 1 + 0.06 * (src.hero.level - 1);
     // Minion waves are big and frequent now, so structures shrug off most minion damage.
     if (tgt.structure && src.kind === 'creep') amount *= 0.35;
     if (tgt.structure) {
       // Fortified early (no 4-minute stomps), crumbling in overtime (no 40-minute stalemates).
       const minutes = this.time / 60;
       if (minutes < 6) amount *= 0.4;
-      else if (minutes > 15) amount *= 1 + (minutes - 15) * 0.2;
+      else if (minutes > 10) amount *= 1 + (minutes - 10) * 0.35;
     }
     if (this.playerTeam && src.hero && !src.hero.isPlayer && src.team !== this.playerTeam) amount *= this.difficulty().damage;
+    // Bounty: a hero on a long kill streak takes extra damage, so nobody stays unkillable.
+    if (tgt.hero) amount *= 1 + bountyBonus(tgt.hero.streak);
+    // Underdog: the team behind on kills hits enemy heroes harder.
+    if (src.hero && tgt.hero) amount *= 1 + this.underdog(src.team);
     amount *= 1 - tgt.stats.damageReduction;
     // Damage meters count what landed, including what shields soaked up.
     const landed = Math.min(amount, tgt.hp + tgt.shield);
     if (tgt.hero) tgt.hero.dmgTaken += landed;
-    if (src.hero && tgt.hero && src.team !== tgt.team) src.hero.dmgDealt += landed;
+    if (src.hero && src.team !== tgt.team) {
+      src.hero.dmgTotal += landed;
+      if (tgt.hero) src.hero.dmgDealt += landed;
+      else if (tgt.structure) src.hero.dmgBuildings += landed;
+    }
     if (tgt.shield > 0) {
       const absorbed = Math.min(tgt.shield, amount);
       tgt.shield -= absorbed;
@@ -432,7 +451,7 @@ export class World {
     const ef = h.effects;
     const ls = levelScale(h.level);
     if (ef.burn && !t.dead) this.addDot(u, t, 18 * ef.burn * ls, 3);
-    if (ef.frost && !t.dead) this.slow(t, Math.min(0.6, 0.22 * ef.frost), 1.2);
+    if (ef.frost && !t.dead) this.slow(t, Math.min(0.45, 0.22 * ef.frost), 1.2);
     if (ef.cleave) {
       const k = Math.min(1, 0.4 * ef.cleave);
       for (const e of this.enemiesNear(u.team, t.x, t.y, 150)) if (e !== t) this.damage(u, e, dmg * k, 'spell');
@@ -522,8 +541,11 @@ export class World {
     const ef = h.effects;
     if (inst.def.kind === 'ult' && ef.overcharge) cd *= 1 - Math.min(0.6, 0.3 * ef.overcharge);
     inst.readyAt = this.time + cd * (1 - u.stats.cdr);
-    if (ef.bulwarkCast) this.shield(u, 55 * ef.bulwarkCast * levelScale(h.level), 2.5);
-    if (ef.echo && inst.def.kind === 'basic' && this.rng.next() < Math.min(1, 0.3 * ef.echo)) {
+    if (ef.bulwarkCast && this.time >= (h.nextSpellshield ?? 0)) {
+      h.nextSpellshield = this.time + 1.5;
+      this.shield(u, 55 * ef.bulwarkCast * levelScale(h.level), 2.5);
+    }
+    if (ef.echo && inst.def.kind === 'basic' && this.rng.next() < Math.min(0.6, 0.3 * ef.echo)) {
       const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
       this.schedule(0.3, () => {
         if (u.dead || this.winner || !inst.def.cast) return;
@@ -715,7 +737,7 @@ export class World {
     const s = emptyStats();
     for (const k of STAT_KEYS) s[k] = (base[k] + add[k]) * (1 + mul[k]);
     s.cdr = Math.min(0.6, s.cdr);
-    s.damageReduction = Math.min(0.7, s.damageReduction);
+    s.damageReduction = Math.min(0.55, s.damageReduction);
     s.critChance = Math.min(1, s.critChance);
     s.moveSpeed = Math.min(650, s.moveSpeed);
     s.recoup = Math.min(0.8, s.recoup);
@@ -1070,7 +1092,9 @@ export class World {
         const d = len(dx, dy);
         const step = p.speed * dt;
         if (d <= step + t.radius) {
+          this.dmgScale = p.scale ?? 1;
           p.onHit(t);
+          this.dmgScale = 1;
           continue;
         }
         p.vx = (dx / d) * p.speed;
@@ -1087,7 +1111,9 @@ export class World {
       for (const e of this.enemiesNear(p.team, p.x, p.y, p.radius)) {
         if (p.hit.has(e.id)) continue;
         p.hit.add(e.id);
+        this.dmgScale = p.scale ?? 1;
         p.onHit(e);
+        this.dmgScale = 1;
         if (!p.pierce) {
           alive = false;
           break;

@@ -114,6 +114,12 @@ export interface HeroState {
   /** Damage dealt to enemy heroes, and damage taken from any source (after damage reduction, shields included). */
   dmgDealt: number;
   dmgTaken: number;
+  /** Damage to enemy towers and nexus. */
+  dmgBuildings: number;
+  /** Damage to every enemy: heroes, minions and buildings. */
+  dmgTotal: number;
+  /** Spellshield can trigger again at this time. */
+  nextSpellshield?: number;
   /** Kills since last death, and multi-kill tracking. */
   streak: number;
   multi: number;
@@ -191,6 +197,8 @@ export interface Projectile {
   pierce: boolean;
   hit: Set<number>;
   onHit: (t: Unit) => void;
+  /** Damage multiplier for this projectile (Split Shot copies hit for half). */
+  scale?: number;
   /** Homing projectile (auto attacks). */
   targetId?: number;
 }

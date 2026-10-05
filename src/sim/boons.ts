@@ -41,12 +41,12 @@ export const STAT_BOONS: BoonDef[] = [
 
 export const EFFECT_BOONS: BoonDef[] = [
   { id: 'burn', effect: 'burn', name: 'Burning Blade', icon: '🔥', kind: 'effect', desc: (m) => `Attacks burn enemies for ${n(18 * m)} damage per second over 3s.` },
-  { id: 'frost', effect: 'frost', name: 'Frostbite', icon: '🧊', kind: 'effect', desc: (m) => `Attacks chill, slowing by ${pct(Math.min(0.6, 0.22 * m))} for 1.2s.` },
+  { id: 'frost', effect: 'frost', name: 'Frostbite', icon: '🧊', kind: 'effect', desc: (m) => `Attacks chill, slowing by ${pct(Math.min(0.45, 0.22 * m))} for 1.2s.` },
   { id: 'ricochet', effect: 'ricochet', name: 'Ricochet', icon: '🪃', kind: 'effect', desc: (m) => `Attacks bounce to ${Math.max(1, Math.round(m))} more enemy for ${pct(Math.min(0.9, 0.45 * m))} damage.` },
   { id: 'cleave', effect: 'cleave', name: 'Cleave', icon: '🌙', kind: 'effect', desc: (m) => `Attacks also hit enemies around the target for ${pct(Math.min(1, 0.4 * m))} damage.` },
   { id: 'thunder', effect: 'thunder', name: 'Thunderstep', icon: '🌩️', kind: 'effect', desc: (m) => `Every ${(4 / Math.sqrt(m)).toFixed(1)}s your next attack calls down lightning on the target area for ${n(70 * m)} damage.` },
-  { id: 'echo', effect: 'echo', name: 'Echo', icon: '🔁', kind: 'effect', desc: (m) => `Basic abilities have a ${pct(Math.min(1, 0.3 * m))} chance to cast a second time.` },
-  { id: 'split', effect: 'split', name: 'Split Shot', icon: '🎆', kind: 'effect', desc: (m) => `Ability projectiles fire ${m >= 1.8 ? 4 : 2} extra copies in a spread.` },
+  { id: 'echo', effect: 'echo', name: 'Echo', icon: '🔁', kind: 'effect', desc: (m) => `Basic abilities have a ${pct(Math.min(1, 0.3 * m))} chance to cast a second time (max 60%).` },
+  { id: 'split', effect: 'split', name: 'Split Shot', icon: '🎆', kind: 'effect', desc: (m) => `Ability projectiles fire ${m >= 1.8 ? 4 : 2} extra copies at 50% damage in a spread.` },
   { id: 'overcharge', effect: 'overcharge', name: 'Overcharge', icon: '🔋', kind: 'effect', desc: (m) => `Your ultimate's cooldown is ${pct(Math.min(0.6, 0.3 * m))} shorter.` },
   { id: 'afterimage', effect: 'afterimage', name: 'Afterimage', icon: '👥', kind: 'effect', desc: (m) => `Dashes and blinks leave an explosion behind for ${n(80 * m)} damage.` },
   { id: 'static', effect: 'static', name: 'Static Field', icon: '⚡', kind: 'effect', desc: (m) => `Every 2s, zap the nearest enemy for ${n(30 * m)} damage.` },
@@ -54,7 +54,7 @@ export const EFFECT_BOONS: BoonDef[] = [
   { id: 'detonate', effect: 'detonate', name: 'Detonate', icon: '💣', kind: 'effect', desc: (m) => `Enemies you kill explode for ${pct(Math.min(0.5, 0.15 * m))} of their max health to nearby enemies.` },
   { id: 'momentum', effect: 'momentum', name: 'Momentum', icon: '🌪️', kind: 'effect', desc: (m) => `Takedowns give ${pct(0.35 * m)} move speed and attack speed for 4s.` },
   { id: 'secondWind', effect: 'secondWind', name: 'Second Wind', icon: '🪽', kind: 'effect', desc: (m) => `Once per life, survive a killing blow and become untouchable for ${(1 + 0.5 * m).toFixed(1)}s.` },
-  { id: 'bulwarkCast', effect: 'bulwarkCast', name: 'Spellshield', icon: '🔰', kind: 'effect', desc: (m) => `Casting an ability shields you for ${n(55 * m)} for 2.5s.` },
+  { id: 'bulwarkCast', effect: 'bulwarkCast', name: 'Spellshield', icon: '🔰', kind: 'effect', desc: (m) => `Casting an ability shields you for ${n(55 * m)} for 2.5s (once every 1.5s).` },
 ];
 
 export const BOONS: BoonDef[] = [...STAT_BOONS, ...EFFECT_BOONS];

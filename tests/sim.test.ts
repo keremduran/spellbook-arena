@@ -269,9 +269,9 @@ describe('takedown boons and max level', () => {
     w.damage(killer, foe, 1e7, 'true');
   };
 
-  it('every 4th kill earns a boon', () => {
+  it('every 5th kill earns a boon', () => {
     const { w, me, foe } = arena();
-    for (let i = 0; i < 3; i++) killFoe(w, me, foe);
+    for (let i = 0; i < 4; i++) killFoe(w, me, foe);
     expect(me.hero!.offers).toHaveLength(0);
     killFoe(w, me, foe);
     expect(me.hero!.offers).toHaveLength(1);

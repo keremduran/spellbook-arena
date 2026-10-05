@@ -454,25 +454,43 @@ export function setMeter(m: Meter, value: number, max: number) {
   m.bar.style.width = `${(value / max) * 100}%`;
 }
 
-/** End-of-match damage breakdown for every hero, biggest damage dealers first. */
+/** End-of-match damage breakdown for every hero, biggest hero damage first, plus how you ranked. */
 export function damageTable(world: World, me: Unit | null) {
   const heroes = [...world.heroList].sort((a, b) => b.hero!.dmgDealt - a.hero!.dmgDealt);
-  const maxDealt = Math.max(1, ...heroes.map((u) => u.hero!.dmgDealt));
-  const maxTaken = Math.max(1, ...heroes.map((u) => u.hero!.dmgTaken));
+  const max = (f: (h: NonNullable<Unit['hero']>) => number) => Math.max(1, ...heroes.map((u) => f(u.hero!)));
+  const cols: [string, 'dealt' | 'taken', (h: NonNullable<Unit['hero']>) => number][] = [
+    ['To heroes', 'dealt', (h) => h.dmgDealt],
+    ['To towers', 'dealt', (h) => h.dmgBuildings],
+    ['Total dealt', 'dealt', (h) => h.dmgTotal],
+    ['Taken', 'taken', (h) => h.dmgTaken],
+  ];
+  const maxes = cols.map(([, , f]) => max(f));
   const rows = heroes.map((u) => {
     const h = u.hero!;
-    const dealt = meter('dealt');
-    const taken = meter('taken');
-    setMeter(dealt, h.dmgDealt, maxDealt);
-    setMeter(taken, h.dmgTaken, maxTaken);
     return el(`tr.${u.team}${u === me ? '.you' : ''}`, {}, [
       el('td', {}, [heroImg(h.def, 'inline'), ` ${h.name}`]),
       el('td.kda', { text: `${h.kills} / ${h.deaths} / ${h.assists}` }),
-      dealt.cell,
-      taken.cell,
+      ...cols.map(([, kind, f], i) => {
+        const m = meter(kind);
+        setMeter(m, f(h), maxes[i]);
+        return m.cell;
+      }),
     ]);
   });
-  return el('div.dmgtable', {}, [
-    el('table', {}, [el('tr', {}, ['Hero', 'K / D / A', 'Damage dealt', 'Damage taken'].map((t) => el('th', { text: t }))), ...rows]),
-  ]);
+  const parts: HTMLElement[] = [];
+  if (me?.hero) {
+    const h = me.hero;
+    const rank = heroes.indexOf(me) + 1;
+    const team = world.heroList.filter((u) => u.team === me.team);
+    const teamAvg = team.reduce((a, u) => a + u.hero!.dmgDealt, 0) / team.length;
+    const share = h.dmgDealt / Math.max(1, team.reduce((a, u) => a + u.hero!.dmgDealt, 0));
+    const perMin = h.dmgDealt / Math.max(1, world.time / 60);
+    const verdict = rank <= 2 ? 'Carry 🔥' : h.dmgDealt >= teamAvg ? 'Above your team average 👍' : 'Below your team average';
+    parts.push(el('div.dmgverdict', {}, [
+      el('b', { text: `#${rank} of ${heroes.length} in hero damage` }),
+      ` · ${fmtDmg(h.dmgDealt)} (${fmtDmg(perMin)}/min, ${Math.round(share * 100)}% of your team's) · team avg ${fmtDmg(teamAvg)} · ${verdict}`,
+    ]));
+  }
+  parts.push(el('table', {}, [el('tr', {}, ['Hero', 'K / D / A', ...cols.map(([t]) => t)].map((t) => el('th', { text: t }))), ...rows]));
+  return el('div.dmgtable', {}, parts);
 }

@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.8 · damage meters';
+export const VERSION = 'v3.9 · no more unkillables';
 
 export interface Settings {
   mode: 'play' | 'manage';
@@ -97,7 +97,8 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
         el('div', { html: '<b>Desktop:</b> click to move / attack (hold to keep moving), <kbd>Q</kbd> <kbd>W</kbd> <kbd>E</kbd> <kbd>R</kbd> cast towards the mouse, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> pick boons, <kbd>S</kbd> stop, hold <kbd>Tab</kbd> for the scoreboard, <kbd>Esc</kbd> pause.' }),
         el('div', { html: '<b>Mobile:</b> joystick or tap to move, ability buttons auto-aim at the nearest enemy. Play in landscape.' }),
         el('div', { html: '<b>Watch &amp; manage:</b> all 10 heroes are bots. Click a bot (or its row) to follow it and give it orders: Push, Farm, Group, Retreat, or focus an enemy. Team buttons order everyone at once. You choose the boons for the bots you manage: tabs (or <kbd>N</kbd>) switch between bots that are waiting, and “Let bot pick” hands one back. Drag, WASD/arrows or the minimap move the camera, scroll to zoom, change speed at the top, <kbd>Space</kbd> pauses.' }),
-        el('div', { html: '<b>Boons:</b> you earn one every few levels, every 4th kill, every 8th assist, and for each shutdown (Rare or better). ✦ Effect boons change how you fight (burning attacks, ricochet, echoing spells, exploding kills, cheat death) and stack if you take them again. A <b>power rune</b> spawns mid-lane about every minute: grab it for a Rare-or-better boon.' }),
+        el('div', { html: '<b>Boons:</b> you earn one every few levels, every 5th kill, every 8th assist, and for each shutdown (Rare or better). ✦ Effect boons change how you fight (burning attacks, ricochet, echoing spells, exploding kills, cheat death) and stack if you take them again. A <b>power rune</b> spawns mid-lane about every minute: grab it for a Rare-or-better boon.' }),
+        el('div', { html: '<b>No unkillables:</b> a hero on a 5+ kill streak takes extra damage (up to +40%), and a team that is 8+ kills behind hits heroes harder (up to +25%). Damage reduction caps at 55%, shields at 60% of max health.' }),
         el('div', { html: '<b>Goal:</b> destroy the enemy towers, then their nexus. Your fountain heals you; theirs will melt you.' }),
       ]),
       el('p.credits', { html: 'Hero icons by Lorc and Delapouite from <a href="https://game-icons.net" target="_blank" rel="noopener">game-icons.net</a>, licensed <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener">CC BY 3.0</a>.' }),

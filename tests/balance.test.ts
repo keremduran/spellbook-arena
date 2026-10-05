@@ -22,6 +22,7 @@ it.runIf(process.env.BALANCE)('balance report', () => {
   const lvl6: number[] = [];
   let kills = 0;
   let blueWins = 0;
+  const tanks: { score: number; line: string }[] = [];
   for (let g = 0; g < N; g++) {
     const seed = 1000 + g;
     const rng = new Rng(seed);
@@ -42,6 +43,12 @@ it.runIf(process.env.BALANCE)('balance report', () => {
     kills += w.kills.blue + w.kills.red;
     if (w.winner === 'blue') blueWins++;
     for (const h of w.heroList) {
+      const hh = h.hero!;
+      const effects = Object.entries(hh.effects).map(([k, v]) => `${k}×${(v as number).toFixed(1)}`).join(' ');
+      tanks.push({
+        score: hh.dmgTaken / (hh.deaths + 1),
+        line: `g${g} ${hh.def.name} ${hh.kills}/${hh.deaths}/${hh.assists} taken ${Math.round(hh.dmgTaken / 1000)}k dealt ${Math.round(hh.dmgDealt / 1000)}k dr ${(h.stats.damageReduction * 100).toFixed(0)}% | ${SLOTS.map((s) => hh.abilities[s]?.def.name).join(', ')} | ${hh.boons.map((b) => b.def.name).join(', ')} | ${effects}`,
+      });
       const win = h.team === w.winner;
       add(`hero:${h.hero!.def.name}`, win);
       for (const s of SLOTS) {
@@ -52,6 +59,7 @@ it.runIf(process.env.BALANCE)('balance report', () => {
   }
   const avg = (a: number[]) => (a.reduce((x, y) => x + y, 0) / Math.max(1, a.length)).toFixed(1);
   console.log(`games ${N} | length avg ${avg(lengths)} min (min ${Math.min(...lengths).toFixed(1)}, max ${Math.max(...lengths).toFixed(1)}) | avg lvl6 at ${avg(lvl6)} min | avg lvl18 at ${avg(lvl18)} min (${lvl18.length} games) | kills/game ${(kills / N).toFixed(0)} | blue wins ${blueWins}`);
+  if (process.env.TANKS) for (const t of tanks.sort((a, b) => b.score - a.score).slice(0, 8)) console.log(`${Math.round(t.score / 1000)}k/life  ${t.line}`);
   const rows = [...stat.entries()].map(([k, s]) => ({ k, picks: s.picks, wr: s.wins / s.picks })).sort((a, b) => b.wr - a.wr);
   for (const r of rows) console.log(`${(r.wr * 100).toFixed(0).padStart(3)}%  ${String(r.picks).padStart(4)}  ${r.k}`);
 }, 600000);

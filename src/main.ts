@@ -204,3 +204,11 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
 }
 
 menu();
+
+// Installable app: register the offline cache when running as a normal page (not inside an
+// embedding frame such as the Claude artifact viewer, where service workers aren't allowed).
+if ('serviceWorker' in navigator && window.top === window && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => undefined);
+  });
+}

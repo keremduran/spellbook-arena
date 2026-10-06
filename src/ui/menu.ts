@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v3.10 · tower sounds by team';
+export const VERSION = 'v4 · dodgeable spells, new cards';
 
 export interface Settings {
   mode: 'play' | 'manage';

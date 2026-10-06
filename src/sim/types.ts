@@ -171,6 +171,12 @@ export interface Unit {
   /** Last time this unit hit an enemy hero (tower aggro). */
   lastHitHeroAt: number;
   dash?: Dash;
+  /** Forced movement (hook pulls, knockbacks); moves even while stunned. */
+  slide?: { vx: number; vy: number; until: number };
+  /** Winding up an ability until this time (rooted). */
+  castUntil: number;
+  /** Bumped when a wind-up starts or is interrupted, so a stale release is ignored. */
+  castToken: number;
   /** Pending recoup healing (from the recoup stat). */
   recoupPool: number;
   /** Damage over time (Burning Blade). */
@@ -201,6 +207,26 @@ export interface Projectile {
   scale?: number;
   /** Homing projectile (auto attacks). */
   targetId?: number;
+}
+
+/** Ground warning for an ability that is winding up. */
+export interface Telegraph {
+  ownerId: number;
+  team: Team;
+  shape: 'line' | 'circle';
+  x: number;
+  y: number;
+  /** Line end. */
+  x2: number;
+  y2: number;
+  /** Line half-width or circle radius. */
+  size: number;
+  /** Circle follows the caster (self-centered abilities). */
+  follow: boolean;
+  color: string;
+  start: number;
+  at: number;
+  token: number;
 }
 
 export interface Zone {

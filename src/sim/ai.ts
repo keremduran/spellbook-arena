@@ -66,6 +66,9 @@ function abilityPlan(w: World, u: Unit, mode: 'fight' | 'retreat', target?: Unit
   }
 }
 
+/** Chance per think (~4 per second) that a bot reacts to a ground warning it stands in. */
+const DODGE_CHANCE = 0.35;
+
 const FIGHT_RANGE = { auto: 750, push: 380, farm: 450, group: 900, retreat: 0 };
 
 export function thinkHero(w: World, u: Unit) {
@@ -85,6 +88,13 @@ export function thinkHero(w: World, u: Unit) {
   if (h.retreating || d === 'retreat') {
     if (enemies.length) abilityPlan(w, u, 'retreat');
     u.order = { kind: 'move', x: fountain.x + dir * 40, y: fountain.y };
+    return;
+  }
+
+  // Step out of enemy ground warnings (bots don't always notice).
+  const threat = w.threatFor(u);
+  if (threat && w.rng.next() < DODGE_CHANCE) {
+    u.order = { kind: 'move', x: u.x + threat.away.x * 220, y: u.y + threat.away.y * 220 };
     return;
   }
 

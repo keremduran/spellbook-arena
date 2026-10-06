@@ -376,3 +376,35 @@ describe('damage meters', () => {
     expect(foe.hero!.dmgTaken).toBe(220);
   });
 });
+
+describe('wind-ups', () => {
+  const duel = () => {
+    const w = new World({ boonEveryLevels: 0, seed: 3 });
+    const hook = ABILITIES.find((a) => a.id === 'hook')!;
+    const me = w.addHero({ def: HEROES[0], team: 'blue', name: 'me', isPlayer: true, picks: { Q: { def: hook, rarity: 'common' } } });
+    const foe = w.addHero({ def: HEROES[1], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    me.x = 1500; me.y = 600; foe.x = 1900; foe.y = 600;
+    return { w, me, foe };
+  };
+
+  it('telegraphs before firing and roots the caster', () => {
+    const { w, me, foe } = duel();
+    expect(w.castAbility(me, 'Q', { x: foe.x, y: foe.y })).toBe(true);
+    expect(w.telegraphs).toHaveLength(1);
+    expect(w.projectiles).toHaveLength(0);
+    expect(me.castUntil).toBeGreaterThan(w.time);
+    for (let i = 0; i < 12; i++) w.update(1 / 30);
+    expect(w.telegraphs).toHaveLength(0);
+    expect(w.projectiles.length).toBeGreaterThan(0);
+  });
+
+  it('a stun during the wind-up cancels the cast and refunds half the cooldown', () => {
+    const { w, me, foe } = duel();
+    w.castAbility(me, 'Q', { x: foe.x, y: foe.y });
+    const full = me.hero!.abilities.Q!.readyAt;
+    w.stun(me, 0.5);
+    for (let i = 0; i < 15; i++) w.update(1 / 30);
+    expect(w.projectiles.filter((p) => p.owner === me)).toHaveLength(0);
+    expect(me.hero!.abilities.Q!.readyAt).toBeLessThan(full);
+  });
+});

@@ -520,3 +520,62 @@ body.touch .hud:not(.manager) .feed { top: auto; right: auto; left: 50%; transfo
   .dmgverdict { font-size: 11px; }
   .dmgtable { max-height: none; }
 }
+
+/* ---------------------------------------------------------------- spell cards (draft + boons) */
+
+.scard {
+  --rc: #b0bec5; --ac: #b0bec5;
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 5px 5px 4px; border-radius: 12px; color: var(--text); text-align: center; cursor: pointer;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--rc) 16%, #161d27), #10161e 70%);
+  border: 2px solid color-mix(in srgb, var(--rc) 70%, #0b0f14);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: transform 0.12s, box-shadow 0.12s, opacity 0.12s;
+  min-width: 0;
+}
+.scard:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 22px color-mix(in srgb, var(--rc) 45%, transparent); }
+.sc-art {
+  position: relative; width: 100%; height: 50px; border-radius: 8px; display: grid; place-items: center;
+  background:
+    radial-gradient(circle at 50% 55%, color-mix(in srgb, var(--ac) 55%, transparent), transparent 62%),
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 6px, transparent 6px 12px),
+    #0c1117;
+  border: 1px solid color-mix(in srgb, var(--rc) 35%, #0b0f14);
+  overflow: hidden;
+}
+.sc-icon { font-size: 30px; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6)); }
+.sc-corner, .sc-badge {
+  position: absolute; top: 3px; font-size: 10px; font-weight: 800; line-height: 1; padding: 2px 5px; border-radius: 6px;
+  background: rgba(8, 11, 15, 0.75); color: var(--rc);
+}
+.sc-corner { left: 3px; }
+.sc-badge { right: 3px; color: #cfd8dc; }
+.sc-name { font-family: var(--title); font-weight: 700; font-size: 13px; line-height: 1.1; margin-top: 2px; letter-spacing: 0.02em; }
+.sc-line { font-size: 12px; font-weight: 700; color: color-mix(in srgb, var(--ac) 45%, #e8edf2); line-height: 1.15; }
+.sc-note { font-size: 10px; color: var(--muted); line-height: 1.1; }
+.sc-pips { font-size: 9px; letter-spacing: 2px; color: var(--rc); margin-top: auto; }
+.sc-hk { position: absolute; bottom: 3px; right: 4px; font-size: 9px; padding: 0 4px; opacity: 0.7; }
+.scard.r-epic { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 0 14px color-mix(in srgb, var(--rc) 30%, transparent); }
+.scard.r-legendary { border-color: transparent; background:
+  linear-gradient(180deg, color-mix(in srgb, var(--rc) 18%, #161d27), #10161e 70%) padding-box,
+  conic-gradient(from var(--spin, 0deg), #ffca28, #fff3c4, #ff8f00, #ffca28, #fff3c4, #ffca28) border-box;
+  animation: legend-spin 3s linear infinite; }
+@property --spin { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+@keyframes legend-spin { to { --spin: 360deg; } }
+.scard.selected { transform: translateY(-3px); box-shadow: 0 0 0 2px var(--rc), 0 0 26px color-mix(in srgb, var(--rc) 60%, transparent); }
+.scard.selected::after { content: '✓'; position: absolute; bottom: 3px; left: 6px; color: var(--rc); font-weight: 800; font-size: 12px; }
+.scard.dim { opacity: 0.45; }
+.options .scard { min-height: 0; }
+.boon-row .scard { padding-bottom: 6px; }
+.boon-row .sc-art { height: 56px; }
+@media (max-height: 520px) {
+  .sc-art, .boon-row .sc-art { height: 36px; }
+  .sc-icon { font-size: 22px; }
+  .sc-name { font-size: 11px; }
+  .sc-line { font-size: 10.5px; }
+  .sc-note { font-size: 9px; }
+  .sc-pips { display: none; }
+  .sc-hk { display: none; }
+}
+@media (max-width: 900px) { .options .scard { min-width: 128px; scroll-snap-align: start; } }

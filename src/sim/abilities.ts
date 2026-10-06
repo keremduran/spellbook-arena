@@ -32,6 +32,12 @@ export interface AbilityDef {
   cooldown: number;
   range: number;
   ai?: AiUse;
+  /** Seconds the caster is rooted, showing a ground warning, before the ability fires. */
+  windup?: number;
+  /** Shape of that warning. `target` locks onto the enemy nearest the aim when the wind-up starts. */
+  tele?: { shape: 'line'; width: number; length?: number } | { shape: 'circle'; radius: number; self?: boolean } | { shape: 'target'; heroOnly?: boolean };
+  /** A few words for the card. Numbers come from `stat`. */
+  short: (p: number, m: number) => string;
   desc: (p: number, m: number) => string;
   /** Return false when nothing happened (no cooldown is spent). */
   cast?: (w: World, u: Unit, c: CastCtx) => boolean | void;
@@ -62,34 +68,42 @@ const rotate = (v: Vec, a: number): Vec => ({
 const BASICS: AbilityDef[] = [
   {
     id: 'firebolt', name: 'Firebolt', icon: '🔥', color: '#ff7043', kind: 'basic', tags: ['damage', 'skillshot'],
-    cooldown: 5, range: 800, ai: 'damage',
+    cooldown: 5, range: 700, ai: 'damage',
+    windup: 0.15, tele: { shape: 'line', width: 16 },
+    short: (p, m) => `${n(90 * p)} dmg bolt`,
     desc: (p) => `Hurl a bolt of fire that deals ${n(90 * p)} damage to the first enemy hit.`,
     cast: (w, u, c) => {
-      w.projectile({ owner: u, dir: c.dir, speed: 950, range: 800, radius: 16, color: '#ff7043',
+      w.projectile({ owner: u, dir: c.dir, speed: 850, range: 700, radius: 16, color: '#ff7043',
         onHit: (t) => w.damage(u, t, 90 * c.p, 'spell') });
     },
   },
   {
     id: 'frost_lance', name: 'Frost Lance', icon: '❄️', color: '#80deea', kind: 'basic', tags: ['damage', 'slow'],
-    cooldown: 6, range: 800, ai: 'damage',
+    cooldown: 6, range: 700, ai: 'damage',
+    windup: 0.2, tele: { shape: 'line', width: 18 },
+    short: (p, m) => `${n(65 * p)} dmg · ${pct(Math.min(0.7, 0.4 * m))} slow`,
     desc: (p, m) => `Fire an icy lance dealing ${n(65 * p)} damage and slowing by ${pct(Math.min(0.7, 0.4 * m))} for 1.5s.`,
     cast: (w, u, c) => {
-      w.projectile({ owner: u, dir: c.dir, speed: 900, range: 800, radius: 18, color: '#80deea',
+      w.projectile({ owner: u, dir: c.dir, speed: 820, range: 700, radius: 18, color: '#80deea',
         onHit: (t) => { w.damage(u, t, 65 * c.p, 'spell'); w.slow(t, Math.min(0.7, 0.4 * c.m), 1.5); } });
     },
   },
   {
     id: 'piercing_arrow', name: 'Piercing Arrow', icon: '➶', color: '#c5e1a5', kind: 'basic', tags: ['damage', 'long range'],
-    cooldown: 7, range: 1100, ai: 'damage',
+    cooldown: 7, range: 950, ai: 'damage',
+    windup: 0.35, tele: { shape: 'line', width: 14 },
+    short: (p, m) => `${n(80 * p)} dmg · pierces`,
     desc: (p) => `Loose an arrow that passes through every enemy in a long line for ${n(80 * p)} damage.`,
     cast: (w, u, c) => {
-      w.projectile({ owner: u, dir: c.dir, speed: 1400, range: 1100, radius: 14, color: '#c5e1a5', pierce: true,
+      w.projectile({ owner: u, dir: c.dir, speed: 1200, range: 950, radius: 14, color: '#c5e1a5', pierce: true,
         onHit: (t) => w.damage(u, t, 80 * c.p, 'spell') });
     },
   },
   {
     id: 'shock_nova', name: 'Shock Nova', icon: '💥', color: '#ffee58', kind: 'basic', tags: ['area', 'damage'],
     cooldown: 7, range: 230, ai: 'self',
+    windup: 0.2, tele: { shape: 'circle', radius: 230, self: true },
+    short: (p, m) => `${n(80 * p)} dmg burst`,
     desc: (p) => `Release a shockwave around you dealing ${n(80 * p)} damage.`,
     cast: (w, u, c) => {
       w.nova({ owner: u, x: u.x, y: u.y, radius: 230, delay: 0, color: '#ffee58', onHit: (t) => w.damage(u, t, 80 * c.p, 'spell') });
@@ -97,25 +111,30 @@ const BASICS: AbilityDef[] = [
   },
   {
     id: 'meteor', name: 'Meteor', icon: '☄️', color: '#ff8a65', kind: 'basic', tags: ['area', 'damage'],
-    cooldown: 8, range: 750, ai: 'damage',
+    cooldown: 8, range: 650, ai: 'damage',
+    short: (p, m) => `${n(130 * p)} dmg · 0.8s fall`,
     desc: (p) => `Call down a meteor that lands after 0.8s, dealing ${n(130 * p)} damage in an area.`,
     cast: (w, u, c) => {
-      const t = clampAim(u, c.aim, 750);
+      const t = clampAim(u, c.aim, 650);
       w.nova({ owner: u, x: t.x, y: t.y, radius: 170, delay: 0.8, color: '#ff8a65', onHit: (e) => w.damage(u, e, 130 * c.p, 'spell') });
     },
   },
   {
     id: 'bramble', name: 'Bramble Field', icon: '🌿', color: '#66bb6a', kind: 'basic', tags: ['area', 'slow'],
-    cooldown: 9, range: 700, ai: 'damage',
+    cooldown: 9, range: 620, ai: 'damage',
+    windup: 0.25, tele: { shape: 'circle', radius: 190 },
+    short: (p, m) => `${n(30 * p)}/s · slow · 4s`,
     desc: (p) => `Grow thorns for 4s that deal ${n(30 * p)} damage per second and slow enemies by 30%.`,
     cast: (w, u, c) => {
-      const t = clampAim(u, c.aim, 700);
+      const t = clampAim(u, c.aim, 620);
       w.zone({ owner: u, x: t.x, y: t.y, radius: 190, duration: 4, dps: 30 * c.p, slowPct: 0.3, color: '#66bb6a' });
     },
   },
   {
     id: 'dash_strike', name: 'Dash Strike', icon: '💨', color: '#e0e0e0', kind: 'basic', tags: ['mobility', 'damage'],
     cooldown: 8, range: 340, ai: 'engage',
+    windup: 0.08, tele: { shape: 'line', width: 45, length: 340 },
+    short: (p, m) => `dash · ${n(70 * p)} dmg`,
     desc: (p) => `Dash forward, dealing ${n(70 * p)} damage to enemies you pass through.`,
     cast: (w, u, c) => {
       w.dash(u, c.dir, 340, 1300, { damage: 70 * c.p, radius: 45 });
@@ -124,6 +143,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'blink', name: 'Blink', icon: '✴️', color: '#b388ff', kind: 'basic', tags: ['mobility'],
     cooldown: 10, range: 430, ai: 'escape',
+    short: (p, m) => `teleport · ${n(10 / Math.sqrt(m))}s`,
     desc: (_p, m) => `Teleport up to 430 units. Cooldown shortened to ${n(10 / Math.sqrt(m))}s by rarity.`,
     cast: (w, u, c) => {
       w.blinkTo(u, c.aim, 430);
@@ -133,6 +153,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'shadow_veil', name: 'Shadow Veil', icon: '👤', color: '#7e57c2', kind: 'basic', tags: ['invisibility', 'mobility'],
     cooldown: 14, range: 0, ai: 'escape',
+    short: (p, m) => `vanish ${(2.5 * m).toFixed(1)}s`,
     desc: (_p, m) => `Turn invisible for ${(2.5 * m).toFixed(1)}s and gain 25% move speed. Attacking or casting reveals you.`,
     cast: (w, u, c) => {
       w.stealth(u, 2.5 * c.m);
@@ -142,6 +163,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'frenzy', name: 'Frenzy', icon: '😤', color: '#ef5350', kind: 'basic', tags: ['attack speed'],
     cooldown: 11, range: 0, ai: 'self',
+    short: (p, m) => `+${pct(0.5 * m)} atk speed`,
     desc: (_p, m) => `Gain ${pct(0.5 * m)} attack speed for 4s.`,
     cast: (w, u, c) => {
       w.addBuff(u, { id: 'frenzy', duration: 4, mul: { attackSpeed: 0.5 * c.m } });
@@ -150,6 +172,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'sprint', name: 'Sprint', icon: '👟', color: '#4dd0e1', kind: 'basic', tags: ['movement speed'],
     cooldown: 10, range: 0, ai: 'escape',
+    short: (p, m) => `+${pct(0.4 * m)} speed`,
     desc: (_p, m) => `Gain ${pct(0.4 * m)} move speed for 3s.`,
     cast: (w, u, c) => {
       w.addBuff(u, { id: 'sprint', duration: 3, mul: { moveSpeed: 0.4 * c.m } });
@@ -158,6 +181,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'iron_skin', name: 'Iron Skin', icon: '🪨', color: '#bdbdbd', kind: 'basic', tags: ['tank', 'shield'],
     cooldown: 9.5, range: 0, ai: 'heal',
+    short: (p, m) => `${n(185 * p)} shield`,
     desc: (p) => `Gain a ${n(185 * p)} damage shield for 3.5s.`,
     cast: (w, u, c) => {
       w.shield(u, 185 * c.p, 3.5);
@@ -166,6 +190,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'rejuvenate', name: 'Rejuvenate', icon: '💚', color: '#69f0ae', kind: 'basic', tags: ['heal', 'support'],
     cooldown: 12, range: 450, ai: 'heal',
+    short: (p, m) => `heal ${n(120 * p)} · team ${n(70 * p)}`,
     desc: (p) => `Heal yourself for ${n(120 * p)} and nearby allied heroes for ${n(70 * p)}.`,
     cast: (w, u, c) => {
       w.heal(u, 120 * c.p);
@@ -175,32 +200,44 @@ const BASICS: AbilityDef[] = [
   },
   {
     id: 'chain_lightning', name: 'Chain Lightning', icon: '⚡', color: '#fff59d', kind: 'basic', tags: ['damage', 'bounce'],
-    cooldown: 7, range: 600, ai: 'damage',
+    cooldown: 7, range: 550, ai: 'damage',
+    windup: 0.2, tele: { shape: 'target' },
+    short: (p, m) => `${n(60 * p)} × ${n(4 + m)} bounces`,
     desc: (p, m) => `Lightning strikes the enemy nearest your aim and bounces to ${n(3 + m)} more targets, dealing ${n(60 * p)} each.`,
     cast: (w, u, c) => {
-      const first = w.nearestEnemyTo(u.team, c.aim, 600, u);
+      const first = w.nearestEnemyTo(u.team, c.aim, 550, u);
       if (!first) return false;
       w.chain(u, first, Math.round(4 + c.m), 320, 60 * c.p, '#fff59d');
     },
   },
   {
     id: 'hook', name: 'Grappling Hook', icon: '🪝', color: '#a1887f', kind: 'basic', tags: ['pull', 'damage'],
-    cooldown: 11, range: 850, ai: 'damage',
+    cooldown: 11, range: 700, ai: 'damage',
+    windup: 0.3, tele: { shape: 'line', width: 18 },
+    short: (p, m) => `pull · ${n(60 * p)} dmg`,
     desc: (p) => `Throw a hook that pulls the first enemy hit to you and deals ${n(60 * p)} damage.`,
     cast: (w, u, c) => {
-      w.projectile({ owner: u, dir: c.dir, speed: 1150, range: 850, radius: 18, color: '#a1887f',
+      w.projectile({ owner: u, dir: c.dir, speed: 900, range: 700, radius: 18, color: '#a1887f',
         onHit: (t) => {
-          w.fx({ kind: 'line', x: u.x, y: u.y, x2: t.x, y2: t.y, r: 0, color: '#a1887f', duration: 0.3, width: 4 });
-          const d = u.radius + t.radius + 10;
-          w.moveUnit(t, u.x + c.dir.x * d, u.y + c.dir.y * d);
+          // Reel the target in over a moment, chain visible, instead of teleporting it.
+          const dx = u.x - t.x;
+          const dy = u.y - t.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const travel = Math.max(0, d - (u.radius + t.radius + 10));
+          const speed = 1500;
           w.damage(u, t, 60 * c.p, 'spell');
-          w.stun(t, 0.3);
+          if (t.dead) return;
+          w.stun(t, travel / speed + 0.3);
+          w.slide(t, { x: dx / d, y: dy / d }, travel, speed);
+          w.fx({ kind: 'line', x: u.x, y: u.y, x2: t.x, y2: t.y, r: 0, color: '#d7ccc8', duration: travel / speed + 0.1, width: 4 });
         } });
     },
   },
   {
     id: 'ground_slam', name: 'Ground Slam', icon: '🔨', color: '#d7ccc8', kind: 'basic', tags: ['area', 'stun'],
     cooldown: 11, range: 220, ai: 'self',
+    windup: 0.3, tele: { shape: 'circle', radius: 220, self: true },
+    short: (p, m) => `${n(55 * p)} dmg · stun ${(0.8 + 0.2 * m).toFixed(1)}s`,
     desc: (p, m) => `Slam the ground, dealing ${n(55 * p)} damage and stunning nearby enemies for ${(0.8 + 0.2 * m).toFixed(1)}s.`,
     cast: (w, u, c) => {
       w.nova({ owner: u, x: u.x, y: u.y, radius: 220, delay: 0, color: '#d7ccc8',
@@ -210,6 +247,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'whirlwind', name: 'Whirlwind', icon: '🌀', color: '#90caf9', kind: 'basic', tags: ['area', 'damage'],
     cooldown: 9, range: 180, ai: 'self',
+    short: (p, m) => `${n(60 * p)}/s spin`,
     desc: (p) => `Spin for 2s, dealing ${n(60 * p)} damage per second to enemies around you.`,
     cast: (w, u, c) => {
       w.zone({ owner: u, x: u.x, y: u.y, radius: 180, duration: 2, dps: 60 * c.p, color: '#90caf9', follow: true });
@@ -217,27 +255,32 @@ const BASICS: AbilityDef[] = [
   },
   {
     id: 'fan_of_knives', name: 'Fan of Knives', icon: '🔪', color: '#cfd8dc', kind: 'basic', tags: ['damage', 'multi-shot'],
-    cooldown: 7, range: 600, ai: 'damage',
+    cooldown: 7, range: 520, ai: 'damage',
+    windup: 0.15, tele: { shape: 'line', width: 70, length: 520 },
+    short: (p, m) => `5 × ${n(42 * p)} dmg`,
     desc: (p) => `Throw 5 knives in a cone, each dealing ${n(42 * p)} damage.`,
     cast: (w, u, c) => {
       for (let i = -2; i <= 2; i++) {
-        w.projectile({ owner: u, dir: rotate(c.dir, i * 0.22), speed: 1000, range: 600, radius: 12, color: '#cfd8dc',
+        w.projectile({ owner: u, dir: rotate(c.dir, i * 0.22), speed: 1000, range: 520, radius: 12, color: '#cfd8dc',
           onHit: (t) => w.damage(u, t, 42 * c.p, 'spell') });
       }
     },
   },
   {
     id: 'gust', name: 'Gust', icon: '🌬️', color: '#b2ebf2', kind: 'basic', tags: ['knockback', 'damage'],
-    cooldown: 7, range: 700, ai: 'damage',
+    cooldown: 7, range: 600, ai: 'damage',
+    windup: 0.2, tele: { shape: 'line', width: 45 },
+    short: (p, m) => `${n(70 * p)} dmg · knockback`,
     desc: (p) => `Send a wide gust that deals ${n(70 * p)} damage and knocks enemies back.`,
     cast: (w, u, c) => {
-      w.projectile({ owner: u, dir: c.dir, speed: 950, range: 700, radius: 45, color: '#b2ebf2', pierce: true,
+      w.projectile({ owner: u, dir: c.dir, speed: 950, range: 600, radius: 45, color: '#b2ebf2', pierce: true,
         onHit: (t) => { w.damage(u, t, 70 * c.p, 'spell'); w.knockback(t, u.x, u.y, 260); } });
     },
   },
   {
     id: 'empower', name: 'Empower', icon: '🗡️', color: '#ffab40', kind: 'basic', tags: ['on-hit', 'attack'],
     cooldown: 10, range: 0, ai: 'self',
+    short: (p, m) => `+${n(35 * p)} per hit`,
     desc: (p) => `For 5s your attacks deal ${n(35 * p)} bonus damage.`,
     cast: (w, u, c) => {
       w.addBuff(u, { id: 'empower', duration: 5, add: { onHitDamage: 35 * c.p } });
@@ -245,10 +288,12 @@ const BASICS: AbilityDef[] = [
   },
   {
     id: 'vampiric_touch', name: 'Vampiric Touch', icon: '🩸', color: '#e53935', kind: 'basic', tags: ['damage', 'heal'],
-    cooldown: 8, range: 520, ai: 'damage',
+    cooldown: 8, range: 480, ai: 'damage',
+    windup: 0.2, tele: { shape: 'target' },
+    short: (p, m) => `drain ${n(75 * p)}`,
     desc: (p) => `Drain the enemy nearest your aim for ${n(75 * p)} damage, healing you for the same amount.`,
     cast: (w, u, c) => {
-      const t = w.nearestEnemyTo(u.team, c.aim, 520, u);
+      const t = w.nearestEnemyTo(u.team, c.aim, 480, u);
       if (!t) return false;
       w.fx({ kind: 'line', x: u.x, y: u.y, x2: t.x, y2: t.y, r: 0, color: '#e53935', duration: 0.35, width: 5 });
       const dealt = w.damage(u, t, 75 * c.p, 'spell');
@@ -257,16 +302,20 @@ const BASICS: AbilityDef[] = [
   },
   {
     id: 'poison_cloud', name: 'Poison Cloud', icon: '☠️', color: '#9ccc65', kind: 'basic', tags: ['area', 'damage'],
-    cooldown: 8, range: 700, ai: 'damage',
+    cooldown: 8, range: 620, ai: 'damage',
+    windup: 0.25, tele: { shape: 'circle', radius: 200 },
+    short: (p, m) => `${n(50 * p)}/s · 3s`,
     desc: (p) => `Release a toxic cloud dealing ${n(50 * p)} damage per second for 3s.`,
     cast: (w, u, c) => {
-      const t = clampAim(u, c.aim, 700);
+      const t = clampAim(u, c.aim, 620);
       w.zone({ owner: u, x: t.x, y: t.y, radius: 200, duration: 3, dps: 50 * c.p, color: '#9ccc65' });
     },
   },
   {
     id: 'leap', name: 'Leap', icon: '🐸', color: '#aed581', kind: 'basic', tags: ['mobility', 'area', 'slow'],
     cooldown: 10, range: 480, ai: 'engage',
+    windup: 0.1, tele: { shape: 'circle', radius: 170 },
+    short: (p, m) => `leap · ${n(70 * p)} dmg · slow`,
     desc: (p) => `Leap to a location, dealing ${n(70 * p)} damage and slowing enemies where you land.`,
     cast: (w, u, c) => {
       const t = clampAim(u, c.aim, 480);
@@ -280,6 +329,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'battle_cry', name: 'Battle Cry', icon: '📯', color: '#ffd54f', kind: 'basic', tags: ['support', 'attack speed', 'movement speed'],
     cooldown: 14, range: 500, ai: 'self',
+    short: (p, m) => `team +${pct(0.25 * m)} atk speed`,
     desc: (_p, m) => `You and nearby allied heroes gain ${pct(0.25 * m)} attack speed and ${pct(0.15 * m)} move speed for 4s.`,
     cast: (w, u, c) => {
       for (const a of w.alliesNear(u.team, u.x, u.y, 500, true)) {
@@ -291,6 +341,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'bulwark_stance', name: 'Bulwark Stance', icon: '🧱', color: '#a1887f', kind: 'basic', tags: ['tank', 'damage reduction', 'heal'],
     cooldown: 12, range: 0, ai: 'heal',
+    short: (p, m) => `−${pct(Math.min(0.4, 0.22 * m))} dmg taken`,
     desc: (_p, m) => `For 4s take ${pct(Math.min(0.4, 0.22 * m))} less damage and heal back 30% of the damage you take.`,
     cast: (w, u, c) => {
       w.addBuff(u, { id: 'bulwark_stance', duration: 4, add: { damageReduction: Math.min(0.4, 0.22 * c.m), recoup: 0.3 } });
@@ -300,6 +351,7 @@ const BASICS: AbilityDef[] = [
   {
     id: 'mending', name: 'Mending', icon: '🩹', color: '#81c784', kind: 'basic', tags: ['tank', 'heal', 'regeneration'],
     cooldown: 14, range: 0, ai: 'heal',
+    short: (p, m) => `regen ${pct(Math.min(0.45, 0.22 * m))} hp`,
     desc: (_p, m) => `Regenerate ${pct(Math.min(0.45, 0.22 * m))} of your max health over 5s.`,
     cast: (w, u, c) => {
       w.addBuff(u, { id: 'mending', duration: 5, add: { regenPct: Math.min(0.09, 0.045 * c.m) } });
@@ -312,16 +364,18 @@ const BASICS: AbilityDef[] = [
 const ULTS: AbilityDef[] = [
   {
     id: 'inferno', name: 'Inferno', icon: '🌋', color: '#ff5722', kind: 'ult', tags: ['area', 'damage'],
-    cooldown: 45, range: 850, ai: 'damage',
+    cooldown: 45, range: 750, ai: 'damage',
+    short: (p, m) => `${n(280 * p)} dmg · huge`,
     desc: (p) => `After 1s, engulf a huge area in flames for ${n(280 * p)} damage.`,
     cast: (w, u, c) => {
-      const t = clampAim(u, c.aim, 850);
+      const t = clampAim(u, c.aim, 750);
       w.nova({ owner: u, x: t.x, y: t.y, radius: 320, delay: 1, color: '#ff5722', onHit: (e) => w.damage(u, e, 280 * c.p, 'spell') });
     },
   },
   {
     id: 'death_mark', name: 'Requiem', icon: '💀', color: '#b0bec5', kind: 'ult', tags: ['global', 'damage'],
     cooldown: 70, range: 99999, ai: 'global',
+    short: (p, m) => `${n(190 * p)} dmg · everywhere`,
     desc: (p) => `After 2.5s, strike every visible enemy hero anywhere on the map for ${n(190 * p)} damage.`,
     cast: (w, u, c) => {
       const team = u.team;
@@ -338,6 +392,7 @@ const ULTS: AbilityDef[] = [
   {
     id: 'avatar', name: 'Avatar', icon: '🗿', color: '#ffcc80', kind: 'ult', tags: ['tank', 'buff', 'attack speed', 'size'],
     cooldown: 60, range: 0, ai: 'self',
+    short: (p, m) => `giant · +${pct(0.45 * m)} power`,
     desc: (p, m) => `Grow huge for 10s: +${pct(0.45 * m)} attack damage and attack speed, +35% max health, 15% lifesteal, and heal ${n(275 * p)}.`,
     cast: (w, u, c) => {
       w.addBuff(u, { id: 'avatar', duration: 10, mul: { ad: 0.45 * c.m, attackSpeed: 0.45 * c.m, maxHp: 0.35 }, add: { size: 0.35, lifesteal: 0.15 } });
@@ -346,62 +401,64 @@ const ULTS: AbilityDef[] = [
   },
   {
     id: 'black_hole', name: 'Black Hole', icon: '🕳️', color: '#7c4dff', kind: 'ult', tags: ['area', 'pull', 'damage'],
-    cooldown: 55, range: 750, ai: 'damage',
+    cooldown: 55, range: 650, ai: 'damage',
+    windup: 0.3, tele: { shape: 'circle', radius: 280 },
+    short: (p, m) => `pull · ${n(60 * p)}/s`,
     desc: (p) => `Open a black hole for 3s that pulls enemies in and deals ${n(60 * p)} damage per second.`,
     cast: (w, u, c) => {
-      const t = clampAim(u, c.aim, 750);
+      const t = clampAim(u, c.aim, 650);
       w.zone({ owner: u, x: t.x, y: t.y, radius: 280, duration: 3, dps: 60 * c.p, pull: 230, slowPct: 0.2, color: '#7c4dff' });
     },
   },
   {
     id: 'laser', name: 'Solar Beam', icon: '🔆', color: '#ffeb3b', kind: 'ult', tags: ['long range', 'damage'],
-    cooldown: 50, range: 1400, ai: 'damage',
-    desc: (p) => `After 0.4s, fire a beam across a huge line dealing ${n(340 * p)} damage.`,
+    cooldown: 50, range: 1200, ai: 'damage',
+    windup: 0.5, tele: { shape: 'line', width: 55, length: 1200 },
+    short: (p, m) => `${n(340 * p)} dmg beam`,
+    desc: (p) => `After 0.5s, fire a beam across a huge line dealing ${n(340 * p)} damage.`,
     cast: (w, u, c) => {
-      // Remember the aimed point so the beam still hits it if the caster moves during the wind-up.
-      const close = Math.hypot(c.aim.x - u.x, c.aim.y - u.y) < 60;
-      const target = close ? { x: u.x + c.dir.x * 1400, y: u.y + c.dir.y * 1400 } : { x: c.aim.x, y: c.aim.y };
-      w.fx({ kind: 'line', x: u.x, y: u.y, x2: u.x + c.dir.x * 1400, y2: u.y + c.dir.y * 1400, r: 0, color: '#fff9c4', duration: 0.4, width: 3 });
-      w.schedule(0.4, () => {
-        if (u.dead) return;
-        const dx = target.x - u.x;
-        const dy = target.y - u.y;
-        const d = Math.hypot(dx, dy) || 1;
-        const dir = { x: dx / d, y: dy / d };
-        w.fx({ kind: 'line', x: u.x, y: u.y, x2: u.x + dir.x * 1400, y2: u.y + dir.y * 1400, r: 0, color: '#ffeb3b', duration: 0.35, width: 40 });
-        w.lineHit(u, dir, 1400, 55, (e) => w.damage(u, e, 340 * c.p, 'spell'));
-      });
+      // The wind-up (rooted, with a ground warning) already happened; fire along the locked direction.
+      const dir = c.dir;
+      w.fx({ kind: 'line', x: u.x, y: u.y, x2: u.x + dir.x * 1200, y2: u.y + dir.y * 1200, r: 0, color: '#ffeb3b', duration: 0.35, width: 40 });
+      w.lineHit(u, dir, 1200, 55, (e) => w.damage(u, e, 340 * c.p, 'spell'));
     },
   },
   {
     id: 'earthquake', name: 'Earthquake', icon: '🌎', color: '#8d6e63', kind: 'ult', tags: ['area', 'stun'],
     cooldown: 55, range: 360, ai: 'self',
+    windup: 0.45, tele: { shape: 'circle', radius: 360, self: true },
+    short: (p, m) => `${n(160 * p)} dmg · stun ${(1.2 + 0.3 * m).toFixed(1)}s`,
     desc: (p, m) => `Shatter the ground around you, dealing ${n(160 * p)} damage and stunning for ${(1.2 + 0.3 * m).toFixed(1)}s.`,
     cast: (w, u, c) => {
-      w.nova({ owner: u, x: u.x, y: u.y, radius: 360, delay: 0.3, color: '#8d6e63',
+      w.nova({ owner: u, x: u.x, y: u.y, radius: 360, delay: 0, color: '#8d6e63',
         onHit: (e) => { w.damage(u, e, 160 * c.p, 'spell'); w.stun(e, 1.2 + 0.3 * c.m); } });
     },
   },
   {
     id: 'arrow_storm', name: 'Arrow Storm', icon: '🌧️', color: '#aed581', kind: 'ult', tags: ['area', 'slow'],
-    cooldown: 50, range: 950, ai: 'damage',
+    cooldown: 50, range: 800, ai: 'damage',
+    windup: 0.3, tele: { shape: 'circle', radius: 300 },
+    short: (p, m) => `${n(85 * p)}/s · slow · 4s`,
     desc: (p) => `Rain arrows on a large area for 4s: ${n(85 * p)} damage per second and a 30% slow.`,
     cast: (w, u, c) => {
-      const t = clampAim(u, c.aim, 950);
+      const t = clampAim(u, c.aim, 800);
       w.zone({ owner: u, x: t.x, y: t.y, radius: 300, duration: 4, dps: 85 * c.p, slowPct: 0.3, color: '#aed581' });
     },
   },
   {
     id: 'charge', name: 'Unstoppable Charge', icon: '🐂', color: '#ff7043', kind: 'ult', tags: ['mobility', 'stun'],
-    cooldown: 45, range: 700, ai: 'engage',
-    desc: (p) => `Charge 700 units, dealing ${n(180 * p)} damage and stunning everything you hit for 1s.`,
+    cooldown: 45, range: 600, ai: 'engage',
+    windup: 0.25, tele: { shape: 'line', width: 65, length: 600 },
+    short: (p, m) => `charge · ${n(180 * p)} · stun`,
+    desc: (p) => `Charge 600 units, dealing ${n(180 * p)} damage and stunning everything you hit for 1s.`,
     cast: (w, u, c) => {
-      w.dash(u, c.dir, 700, 1500, { damage: 180 * c.p, radius: 65, stun: 1 });
+      w.dash(u, c.dir, 600, 1500, { damage: 180 * c.p, radius: 65, stun: 1 });
     },
   },
   {
     id: 'resurgence', name: 'Resurgence', icon: '🌅', color: '#f48fb1', kind: 'ult', tags: ['tank', 'heal', 'support', 'cleanse'],
     cooldown: 60, range: 600, ai: 'heal',
+    short: (p, m) => `cleanse · heal ${pct(Math.min(0.9, 0.44 * m))}`,
     desc: (_p, m) => `Cleanse yourself, heal ${pct(Math.min(0.9, 0.44 * m))} of your max health and heal nearby allied heroes for 27%.`,
     cast: (w, u, c) => {
       u.stunUntil = 0;
@@ -413,10 +470,12 @@ const ULTS: AbilityDef[] = [
   },
   {
     id: 'shadow_strike', name: 'Shadow Strike', icon: '🌑', color: '#9575cd', kind: 'ult', tags: ['mobility', 'execute', 'damage'],
-    cooldown: 40, range: 750, ai: 'engage',
+    cooldown: 40, range: 600, ai: 'engage',
+    windup: 0.3, tele: { shape: 'target', heroOnly: true },
+    short: (p, m) => `${n(220 * p)} · ×2 on low hp`,
     desc: (p) => `Teleport behind the enemy hero nearest your aim and strike for ${n(220 * p)} damage. Double damage to targets under 30% health.`,
     cast: (w, u, c) => {
-      const t = w.nearestEnemyTo(u.team, c.aim, 750, u, true);
+      const t = w.nearestEnemyTo(u.team, c.aim, 600, u, true);
       if (!t) return false;
       const dx = t.x - u.x;
       const dy = t.y - u.y;
@@ -430,6 +489,7 @@ const ULTS: AbilityDef[] = [
   {
     id: 'time_warp', name: 'Time Warp', icon: '⏳', color: '#ffe082', kind: 'ult', tags: ['tank', 'invulnerable', 'heal'],
     cooldown: 50, range: 0, ai: 'heal',
+    short: (p, m) => `untouchable 2.5s`,
     desc: (_p, m) => `Freeze yourself in time for 2.5s: untargetable and immune to damage. Then heal ${pct(0.175 * m)} max health.`,
     cast: (w, u, c) => {
       w.invuln(u, 2.5);
@@ -438,10 +498,11 @@ const ULTS: AbilityDef[] = [
   },
   {
     id: 'meteor_shower', name: 'Meteor Shower', icon: '🌠', color: '#ffab91', kind: 'ult', tags: ['area', 'damage'],
-    cooldown: 55, range: 800, ai: 'damage',
+    cooldown: 55, range: 700, ai: 'damage',
+    short: (p, m) => `6 × ${n(110 * p)} dmg`,
     desc: (p) => `Call 6 meteors around the target area over 2s, each dealing ${n(110 * p)} damage.`,
     cast: (w, u, c) => {
-      const t = clampAim(u, c.aim, 800);
+      const t = clampAim(u, c.aim, 700);
       for (let i = 0; i < 6; i++) {
         const x = t.x + w.rng.range(-170, 170);
         const y = t.y + w.rng.range(-170, 170);
@@ -452,6 +513,7 @@ const ULTS: AbilityDef[] = [
   {
     id: 'colossus', name: 'Colossus', icon: '🏔️', color: '#8d6e63', kind: 'ult', tags: ['tank', 'health', 'size'],
     cooldown: 55, range: 0, ai: 'heal',
+    short: (p, m) => `+${pct(0.34 * m)} hp · tough`,
     desc: (_p, m) => `For 8s grow massive: +${pct(0.34 * m)} max health (gained as health), 11% less damage taken and 1.5% health regen per second.`,
     cast: (w, u, c) => {
       w.addBuff(u, { id: 'colossus', duration: 8, mul: { maxHp: 0.34 * c.m }, add: { damageReduction: 0.11, regenPct: 0.015, size: 0.5 } });
@@ -465,31 +527,37 @@ const ULTS: AbilityDef[] = [
 const PASSIVES: AbilityDef[] = [
   {
     id: 'bloodthirst', name: 'Bloodthirst', icon: '🧛', color: '#c62828', kind: 'passive', tags: ['lifesteal'], cooldown: 0, range: 0,
+    short: (p, m) => `${pct(0.12 * m)} lifesteal`,
     desc: (_p, m) => `Attacks heal you for ${pct(0.12 * m)} of the damage dealt.`,
     mods: (m) => ({ add: { lifesteal: 0.12 * m } }),
   },
   {
     id: 'berserk', name: 'Berserk', icon: '😡', color: '#e53935', kind: 'passive', tags: ['attack speed'], cooldown: 0, range: 0,
+    short: (p, m) => `+${pct(0.35 * m)} atk speed`,
     desc: (_p, m) => `+${pct(0.35 * m)} attack speed.`,
     mods: (m) => ({ mul: { attackSpeed: 0.35 * m } }),
   },
   {
     id: 'fleetfoot', name: 'Fleetfoot', icon: '🦌', color: '#4dd0e1', kind: 'passive', tags: ['movement speed'], cooldown: 0, range: 0,
+    short: (p, m) => `+${pct(0.14 * m)} speed`,
     desc: (_p, m) => `+${pct(0.14 * m)} move speed.`,
     mods: (m) => ({ mul: { moveSpeed: 0.14 * m } }),
   },
   {
     id: 'giant', name: 'Giant Blood', icon: '🦣', color: '#8d6e63', kind: 'passive', tags: ['tank', 'health', 'size'], cooldown: 0, range: 0,
+    short: (p, m) => `+${pct(0.215 * m)} hp`,
     desc: (_p, m) => `+${pct(0.215 * m)} max health. You are bigger.`,
     mods: (m) => ({ mul: { maxHp: 0.215 * m }, add: { size: 0.25 } }),
   },
   {
     id: 'spellweaver', name: 'Spellweaver', icon: '📖', color: '#7986cb', kind: 'passive', tags: ['spell power', 'cooldowns'], cooldown: 0, range: 0,
+    short: (p, m) => `+${pct(0.22 * m)} spell power`,
     desc: (_p, m) => `+${pct(0.22 * m)} spell power and ${pct(0.1 * m)} cooldown reduction.`,
     mods: (m) => ({ mul: { spellPower: 0.22 * m }, add: { cdr: 0.1 * m } }),
   },
   {
     id: 'static_charge', name: 'Static Charge', icon: '🔋', color: '#fff176', kind: 'passive', tags: ['on-hit', 'bounce'], cooldown: 0, range: 0,
+    short: (p, m) => `3rd hit: ${n(55 * p)} chain`,
     desc: (p) => `Every 3rd attack releases lightning that bounces between 3 enemies for ${n(55 * p)} damage.`,
     onAttack: (w, u, t, _m, p) => {
       if (u.hero && u.hero.attackCount % 3 === 0) w.chain(u, t, 3, 300, 55 * p, '#fff176');
@@ -497,6 +565,7 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'concussive', name: 'Concussive Blows', icon: '🥊', color: '#ffb74d', kind: 'passive', tags: ['stun', 'on-hit'], cooldown: 0, range: 0,
+    short: (p, m) => `4th hit: stun`,
     desc: (p) => `Every 4th attack deals ${n(40 * p)} bonus damage and stuns for 0.7s.`,
     onAttack: (w, u, t, _m, p) => {
       if (u.hero && u.hero.attackCount % 4 === 0) {
@@ -507,16 +576,19 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'thornmail', name: 'Thorns', icon: '🌵', color: '#7cb342', kind: 'passive', tags: ['tank', 'thorns', 'health'], cooldown: 0, range: 0,
+    short: (p, m) => `reflect ${pct(0.275 * m)}`,
     desc: (_p, m) => `Reflect ${pct(0.275 * m)} of damage taken back to the attacker. +11% max health.`,
     mods: (m) => ({ add: { thorns: 0.275 * m }, mul: { maxHp: 0.11 } }),
   },
   {
     id: 'executioner', name: 'Executioner', icon: '🪓', color: '#b71c1c', kind: 'passive', tags: ['execute'], cooldown: 0, range: 0,
+    short: (p, m) => `+${pct(0.3 * m)} vs low hp`,
     desc: (_p, m) => `Deal ${pct(0.3 * m)} more damage to enemies under 35% health.`,
     mods: (m) => ({ add: { execute: 0.3 * m } }),
   },
   {
     id: 'shroud', name: "Assassin's Shroud", icon: '🌫️', color: '#9e9e9e', kind: 'passive', tags: ['invisibility'], cooldown: 0, range: 0,
+    short: (p, m) => `vanish out of combat`,
     desc: (_p, m) => `After ${(4.5 / m).toFixed(1)}s out of combat you become invisible until you attack or cast.`,
     onTick: (w, u, _dt, m) => {
       if (u.hero && w.time - u.hero.lastCombatAt > 4.5 / m) u.stealthUntil = Math.max(u.stealthUntil, w.time + 0.2);
@@ -524,6 +596,7 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'troll_blood', name: 'Troll Blood', icon: '🧌', color: '#66bb6a', kind: 'passive', tags: ['tank', 'regeneration'], cooldown: 0, range: 0,
+    short: (p, m) => `${(1.65 * m).toFixed(1)}% hp/s`,
     desc: (_p, m) => `Regenerate ${(1.65 * m).toFixed(2)}% of your max health per second.`,
     onTick: (w, u, dt, m) => {
       if (u.hp < u.stats.maxHp) w.heal(u, u.stats.maxHp * 0.0165 * m * dt, true);
@@ -531,31 +604,37 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'critical_eye', name: 'Critical Eye', icon: '👁️', color: '#ffca28', kind: 'passive', tags: ['critical'], cooldown: 0, range: 0,
+    short: (p, m) => `${pct(Math.min(1, 0.28 * m))} crit`,
     desc: (_p, m) => `${pct(Math.min(1, 0.28 * m))} chance for attacks to critically strike for 175% damage.`,
     mods: (m) => ({ add: { critChance: 0.28 * m } }),
   },
   {
     id: 'long_reach', name: 'Long Reach', icon: '🔭', color: '#4db6ac', kind: 'passive', tags: ['attack range'], cooldown: 0, range: 0,
+    short: (p, m) => `+${n(130 * m)} range`,
     desc: (_p, m) => `+${n(130 * m)} attack range. Melee heroes become ranged if it's enough.`,
     mods: (m) => ({ add: { attackRange: 130 * m } }),
   },
   {
     id: 'last_stand', name: 'Last Stand', icon: '🩹', color: '#ef9a9a', kind: 'passive', tags: ['tank', 'damage reduction', 'attack speed'], cooldown: 0, range: 0,
+    short: (p, m) => `low hp: −32% dmg`,
     desc: (_p, m) => `Below 37% health, take 32% less damage and gain ${pct(0.35 * m)} attack speed.`,
     dynamicMods: (u, m) => (u.hp / u.stats.maxHp < 0.375 ? { add: { damageReduction: 0.325 }, mul: { attackSpeed: 0.35 * m } } : null),
   },
   {
     id: 'arcane_echo', name: 'Arcane Echo', icon: '🔁', color: '#b39ddb', kind: 'passive', tags: ['cooldowns'], cooldown: 0, range: 0,
+    short: (p, m) => `${pct(0.25 * m)} cooldowns`,
     desc: (_p, m) => `${pct(0.25 * m)} cooldown reduction.`,
     mods: (m) => ({ add: { cdr: 0.25 * m } }),
   },
   {
     id: 'iron_will', name: 'Iron Will', icon: '🔩', color: '#90a4ae', kind: 'passive', tags: ['tank', 'heal'], cooldown: 0, range: 0,
+    short: (p, m) => `heal back ${pct(Math.min(0.4, 0.13 * m))}`,
     desc: (_p, m) => `Heal back ${pct(Math.min(0.4, 0.13 * m))} of all damage you take over 2s. +8% max health.`,
     mods: (m) => ({ add: { recoup: Math.min(0.4, 0.13 * m) }, mul: { maxHp: 0.08 } }),
   },
   {
     id: 'fortress', name: 'Fortress', icon: '🏰', color: '#78909c', kind: 'passive', tags: ['tank', 'damage reduction', 'regeneration'], cooldown: 0, range: 0,
+    short: (p, m) => `−${pct(Math.min(0.22, 0.07 * m))} dmg · regen`,
     desc: (_p, m) => `Take ${pct(Math.min(0.22, 0.07 * m))} less damage and regenerate ${(0.35 * m).toFixed(2)}% max health per second.`,
     mods: (m) => ({ add: { damageReduction: Math.min(0.22, 0.07 * m), regenPct: 0.0035 * m } }),
   },

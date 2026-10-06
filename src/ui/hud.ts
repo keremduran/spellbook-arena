@@ -4,6 +4,7 @@ import { heroImg } from '../game/heroIcons';
 import { MAP_H, MAP_W, MAX_LEVEL, xpToNext } from '../sim/constants';
 import { RARITIES, SLOTS, type BoonInst, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
+import { spellCard } from './cards';
 import { clear, el } from './dom';
 
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -398,20 +399,27 @@ export function portrait(u: Unit, size: 'sm' | 'md' = 'md') {
 }
 
 /** The three boon cards of an offer, each with a before → after note when `preview` is given. */
+/** Compact version of the boon preview (what you have → what you get). */
+const shortPreview = (lines: string[]) => {
+  const first = lines[0] ?? '';
+  if (/maximum: this copy adds nothing/.test(lines.join(' '))) return 'already maxed';
+  return first
+    .replace(/^Stacks with your copy: (.*) power$/, 'stack $1')
+    .replace(/^New effect$/, 'new')
+    .replace(/^.*?: /, '')
+    .replace(' (max)', ' max');
+};
+
 export function boonCards(offer: BoonInst[], onPick: (i: number) => void, preview?: (b: BoonInst) => string[]) {
   return el('div.boon-row', {}, offer.map((b, i) => {
     const r = RARITIES[b.rarity];
     const effect = b.def.kind === 'effect';
-    return el(`button.boon${effect ? '.effect' : ''}`, { style: `--rc:${r.color}`, onclick: () => onPick(i) }, [
-      el('span.bi', { text: b.def.icon }),
-      el('div', {}, [
-        el('b', { text: b.def.name }),
-        el('span.rar', { text: effect ? `✦ ${r.label}` : r.label, title: effect ? 'Effect boon: changes how you fight' : '' }),
-        el('p', { text: b.def.desc(r.mult) }),
-        ...(preview ? [el('div.after', {}, preview(b).map((line) => el('span', { text: line })))] : []),
-      ]),
-      el('kbd.hk', { text: String(i + 1) }),
-    ]);
+    const lines = preview ? preview(b) : [];
+    return spellCard({
+      icon: b.def.icon, name: b.def.name, line: b.def.short(r.mult), rarity: b.rarity,
+      corner: effect ? '✦' : '+', note: lines.length ? shortPreview(lines) : undefined,
+      title: [b.def.desc(r.mult), ...lines].join('\n'), hotkey: String(i + 1), onClick: () => onPick(i),
+    });
   }));
 }
 

@@ -9,6 +9,8 @@ export type SfxName =
   | 'death' | 'kill' | 'allyDown' | 'levelUp' | 'boon' | 'structure' | 'click' | 'victory' | 'defeat' | 'announce' | 'rune';
 
 const PREFS_KEY = 'spellbook-audio';
+/** Music sits well under the sound effects. */
+const MUSIC_LEVEL = 0.35;
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -50,7 +52,7 @@ export class Sfx {
     this.sfxBus.gain.value = this.sfxOn ? 1 : 0;
     this.sfxBus.connect(this.master);
     this.musicBus = this.ctx.createGain();
-    this.musicBus.gain.value = this.musicOn ? 0.5 : 0;
+    this.musicBus.gain.value = this.musicOn ? MUSIC_LEVEL : 0;
     this.musicBus.connect(this.master);
     const len = this.ctx.sampleRate;
     this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -74,7 +76,7 @@ export class Sfx {
 
   setMusic(on: boolean) {
     this.musicOn = on;
-    if (this.ctx) this.musicBus.gain.setTargetAtTime(on ? 0.5 : 0, this.ctx.currentTime, 0.2);
+    if (this.ctx) this.musicBus.gain.setTargetAtTime(on ? MUSIC_LEVEL : 0, this.ctx.currentTime, 0.2);
     this.save();
   }
 
@@ -255,55 +257,54 @@ export class Sfx {
 
   // ------------------------------------------------------------------ music
 
-  /** A slow generative pad with a soft pulse: unobtrusive background for long matches. */
+  /**
+   * Soft, minimal ambient: a slow warm pad (sine/triangle, no beat) with a few sparse bell
+   * notes on top. Meant to sit far behind the game, never to draw attention.
+   */
   startMusic() {
     if (!this.ctx || this.music) return;
     const c = this.ctx;
-    const chords = [[110, 164.8, 220, 261.6], [98, 146.8, 196, 246.9], [87.3, 130.8, 174.6, 220], [98, 146.8, 196, 233.1]];
+    // A-minor-ish pad voicings and a pentatonic set for the bells.
+    const chords = [[110, 164.8, 261.6], [98, 146.8, 246.9], [87.3, 130.8, 220], [98, 146.8, 233.1]];
+    const bells = [440, 523.3, 587.3, 659.3, 784, 880];
     const filter = c.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 700;
+    filter.frequency.value = 520;
     filter.connect(this.musicBus);
-    const lfo = c.createOscillator();
-    const lfoGain = c.createGain();
-    lfo.frequency.value = 0.07;
-    lfoGain.gain.value = 300;
-    lfo.connect(lfoGain).connect(filter.frequency);
-    lfo.start();
     let step = 0;
     let stopped = false;
-    const bar = 4.8;
+    const bar = 9.6;
     const playChord = () => {
       if (stopped) return;
       const t = c.currentTime;
       const notes = chords[step % chords.length];
-      for (const f of notes) {
-        for (const detune of [-6, 6]) {
-          const o = c.createOscillator();
-          const g = c.createGain();
-          o.type = 'sawtooth';
-          o.frequency.value = f;
-          o.detune.value = detune;
-          g.gain.setValueAtTime(0.0001, t);
-          g.gain.exponentialRampToValueAtTime(0.022, t + 1.2);
-          g.gain.exponentialRampToValueAtTime(0.0001, t + bar + 0.8);
-          o.connect(g).connect(filter);
-          o.start(t);
-          o.stop(t + bar + 1);
-        }
-      }
-      // Soft heartbeat pulse on the root.
-      for (let i = 0; i < 4; i++) {
+      notes.forEach((f, i) => {
         const o = c.createOscillator();
         const g = c.createGain();
-        o.frequency.value = notes[0] / 2;
-        const tt = t + i * (bar / 4);
+        o.type = i === 0 ? 'sine' : 'triangle';
+        o.frequency.value = f;
+        o.detune.value = (i - 1) * 4;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(i === 0 ? 0.03 : 0.012, t + 3);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + bar + 2);
+        o.connect(g).connect(filter);
+        o.start(t);
+        o.stop(t + bar + 2.2);
+      });
+      // Two or three quiet bell notes, placed at random in the bar.
+      const count = 1 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < count; i++) {
+        const tt = t + 1 + Math.random() * (bar - 2);
+        const o = c.createOscillator();
+        const g = c.createGain();
+        o.type = 'sine';
+        o.frequency.value = bells[Math.floor(Math.random() * bells.length)];
         g.gain.setValueAtTime(0.0001, tt);
-        g.gain.exponentialRampToValueAtTime(0.09, tt + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, tt + 0.5);
+        g.gain.exponentialRampToValueAtTime(0.018, tt + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, tt + 2.5);
         o.connect(g).connect(this.musicBus);
         o.start(tt);
-        o.stop(tt + 0.6);
+        o.stop(tt + 2.6);
       }
       step++;
     };
@@ -313,7 +314,6 @@ export class Sfx {
       stop: () => {
         stopped = true;
         window.clearInterval(timer);
-        lfo.stop();
         filter.disconnect();
       },
     };

@@ -1,5 +1,5 @@
 import { thinkCreep, thinkHero } from './ai';
-import type { AbilityDef } from './abilities';
+import type { AbilityDef, CastCtx } from './abilities';
 import { bestBoonIndex, rollBoonOffer, type EffectId } from './boons';
 import {
   DIFFICULTY, FIRST_WAVE, FOUNTAIN, FOUNTAIN_RADIUS, LANE_Y, MAP_W, MAX_LEVEL, RANGED_THRESHOLD, RUNE_FIRST, RUNE_INTERVAL, RUNE_RADIUS,
@@ -11,7 +11,7 @@ import { Rng } from './rng';
 import {
   RARITIES, STAT_KEYS, emptyStats, otherTeam,
   type AbilityInst, type BoonInst, type Fx, type GameEvent, type Mods, type Nova, type Projectile, type Rarity, type Slot,
-  type Stats, type Team, type Unit, type UnitKind, type Vec, type Zone,
+  type Stats, type Telegraph, type Team, type Unit, type UnitKind, type Vec, type Zone,
 } from './types';
 
 export interface WorldOptions {
@@ -32,6 +32,10 @@ export interface HeroSetup {
 }
 
 const len = (x: number, y: number) => Math.hypot(x, y);
+const clampTo = (u: Vec, aim: Vec, range: number): Vec => {
+  const d = len(aim.x - u.x, aim.y - u.y);
+  return d <= range ? { x: aim.x, y: aim.y } : { x: u.x + ((aim.x - u.x) / d) * range, y: u.y + ((aim.y - u.y) / d) * range };
+};
 const pctFmt = (v: number) => `${Math.round(v * 100)}%`;
 const intFmt = (v: number) => String(Math.round(v));
 /** Effect boons with a ceiling: [value per 1.0 of power, maximum]. Matches the numbers in boons.ts / world. */
@@ -62,6 +66,7 @@ export class World {
   heroList: Unit[] = [];
   projectiles: Projectile[] = [];
   zones: Zone[] = [];
+  telegraphs: Telegraph[] = [];
   novas: Nova[] = [];
   fxList: Fx[] = [];
   events: GameEvent[] = [];
@@ -93,6 +98,7 @@ export class World {
     const u: Unit = {
       id: this.nextId++, kind, team, x, y, radius, hp: base.maxHp, stats: { ...base }, baseStats: base, dead: false,
       attackCd: 0, facing: { x: laneDir(team), y: 0 }, order: { kind: 'idle' },
+      castUntil: 0, castToken: 0,
       stunUntil: 0, slowUntil: 0, slowPct: 0, stealthUntil: 0, invulnUntil: 0, shield: 0, shieldUntil: 0,
       buffs: [], damagedBy: new Map(), lastHitHeroAt: -99, dots: [], nextDot: 0, recoupPool: 0,
     };
@@ -284,6 +290,7 @@ export class World {
   stun(t: Unit, dur: number) {
     if (t.kind === 'tower' || t.kind === 'nexus') return;
     t.stunUntil = Math.max(t.stunUntil, this.time + dur);
+    this.interrupt(t);
     t.dash = undefined;
   }
 
@@ -298,7 +305,14 @@ export class World {
     const dx = t.x - fromX;
     const dy = t.y - fromY;
     const d = len(dx, dy) || 1;
-    this.moveUnit(t, t.x + (dx / d) * dist, t.y + (dy / d) * dist);
+    this.slide(t, { x: dx / d, y: dy / d }, dist, 1400);
+  }
+
+  /** Forced movement over a short time, so pulls and knockbacks are visible. */
+  slide(t: Unit, dir: Vec, dist: number, speed: number) {
+    if (dist <= 0) return;
+    t.dash = undefined;
+    t.slide = { vx: dir.x * speed, vy: dir.y * speed, until: this.time + dist / speed };
   }
 
   heal(u: Unit, amount: number, silent = false) {
@@ -314,6 +328,42 @@ export class World {
   shield(u: Unit, amount: number, dur: number) {
     u.shield = Math.min(u.stats.maxHp * 0.6, u.shield + amount);
     u.shieldUntil = Math.max(u.shieldUntil, this.time + dur);
+  }
+
+  /** An enemy ground warning this unit is standing in, and the way out of it. */
+  threatFor(u: Unit): { tele: Telegraph; away: Vec } | null {
+    for (const tg of this.telegraphs) {
+      if (tg.team === u.team) continue;
+      if (tg.shape === 'circle') {
+        const dx = u.x - tg.x;
+        const dy = u.y - tg.y;
+        const d = len(dx, dy);
+        if (d < tg.size + u.radius) return { tele: tg, away: d > 1 ? { x: dx / d, y: dy / d } : { x: 0, y: 1 } };
+      } else {
+        const lx = tg.x2 - tg.x;
+        const ly = tg.y2 - tg.y;
+        const l2 = lx * lx + ly * ly || 1;
+        const k = Math.max(0, Math.min(1, ((u.x - tg.x) * lx + (u.y - tg.y) * ly) / l2));
+        const px = tg.x + lx * k;
+        const py = tg.y + ly * k;
+        const d = len(u.x - px, u.y - py);
+        if (d < tg.size + u.radius) {
+          const l = Math.sqrt(l2);
+          const side = (u.x - px) * -ly + (u.y - py) * lx >= 0 ? 1 : -1;
+          return { tele: tg, away: { x: (-ly / l) * side, y: (lx / l) * side } };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Cancels a wind-up in progress (stuns, death). */
+  interrupt(u: Unit) {
+    if (u.castUntil <= this.time) return;
+    u.castUntil = 0;
+    u.castToken++;
+    this.telegraphs = this.telegraphs.filter((t) => t.ownerId !== u.id);
+    this.fx({ kind: 'burst', x: u.x, y: u.y - u.radius, r: 40, color: '#ffffff', duration: 0.3 });
   }
 
   /** Keeps the longer of the current and new invisibility. */
@@ -518,9 +568,10 @@ export class World {
 
   castAbility(u: Unit, slot: Slot, aim: Vec): boolean {
     const h = u.hero;
-    if (!h || u.dead || u.stunUntil > this.time || u.invulnUntil > this.time || this.winner) return false;
+    if (!h || u.dead || u.stunUntil > this.time || u.invulnUntil > this.time || u.castUntil > this.time || this.winner) return false;
     const inst = h.abilities[slot];
     if (!inst || !inst.def.cast || inst.readyAt > this.time) return false;
+    const def = inst.def;
     let dx = aim.x - u.x;
     let dy = aim.y - u.y;
     let d = len(dx, dy);
@@ -530,27 +581,75 @@ export class World {
       d = 1;
     }
     const dir = { x: dx / d, y: dy / d };
-    if (inst.def.id !== 'shadow_veil') u.stealthUntil = 0;
-    this.cooldownOverride = null;
-    const ok = inst.def.cast(this, u, { aim, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult });
-    if (ok === false) return false;
-    this.events.push({ type: 'cast', unitId: u.id, abilityId: inst.def.id, kind: inst.def.kind, tags: inst.def.tags, color: inst.def.color, x: u.x, y: u.y });
+    const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
+    if (def.id !== 'shadow_veil') u.stealthUntil = 0;
     u.facing = dir;
-    if (inst.def.ai !== 'escape' && inst.def.ai !== 'heal') h.lastCombatAt = this.time;
+    const tele = def.tele;
+    if (!def.windup || !tele) return this.release(u, inst, ctx);
+
+    // Wind-up: root the caster, draw a ground warning, then fire at the locked-in aim.
+    let target: Unit | null = null;
+    if (tele.shape === 'target') {
+      target = this.nearestEnemyTo(u.team, aim, def.range, u, tele.heroOnly) ?? null;
+      if (!target) return false;
+      ctx.aim = { x: target.x, y: target.y };
+    }
+    u.castUntil = this.time + def.windup;
+    u.castToken++;
+    u.dash = undefined;
+    const token = u.castToken;
+    const base = { ownerId: u.id, team: u.team, color: def.color, start: this.time, at: this.time + def.windup, token, follow: false };
+    if (tele.shape === 'circle') {
+      const c = tele.self ? { x: u.x, y: u.y } : clampTo(u, aim, def.range);
+      if (!tele.self) ctx.aim = c;
+      this.telegraphs.push({ ...base, shape: 'circle', x: c.x, y: c.y, x2: c.x, y2: c.y, size: tele.radius, follow: !!tele.self });
+    } else {
+      const reach = tele.shape === 'target' ? Math.min(def.range, len(target!.x - u.x, target!.y - u.y)) : tele.length ?? def.range;
+      const to = target ? { x: target.x, y: target.y } : { x: u.x + dir.x * reach, y: u.y + dir.y * reach };
+      this.telegraphs.push({ ...base, shape: 'line', x: u.x, y: u.y, x2: to.x, y2: to.y, size: tele.shape === 'line' ? tele.width : 10 });
+    }
+    // The cooldown starts now; an interrupted wind-up refunds half of it.
+    this.startCooldown(u, inst);
+    const full = inst.readyAt;
+    this.schedule(def.windup, () => {
+      if (u.castToken !== token || u.dead || this.winner) {
+        if (!u.dead) inst.readyAt = this.time + (full - this.time) / 2;
+        return;
+      }
+      u.castUntil = 0;
+      this.release(u, inst, ctx, true);
+    });
+    return true;
+  }
+
+  private startCooldown(u: Unit, inst: AbilityInst) {
+    const h = u.hero!;
     let cd = this.cooldownOverride ?? inst.def.cooldown;
-    const ef = h.effects;
-    if (inst.def.kind === 'ult' && ef.overcharge) cd *= 1 - Math.min(0.6, 0.3 * ef.overcharge);
+    if (inst.def.kind === 'ult' && h.effects.overcharge) cd *= 1 - Math.min(0.6, 0.3 * h.effects.overcharge);
     inst.readyAt = this.time + cd * (1 - u.stats.cdr);
+  }
+
+  /** Fires an ability's effect (immediately, or when its wind-up ends). */
+  private release(u: Unit, inst: AbilityInst, ctx: CastCtx, cooldownStarted = false): boolean {
+    const h = u.hero!;
+    const def = inst.def;
+    this.cooldownOverride = null;
+    const ok = def.cast!(this, u, ctx);
+    if (ok === false) return false;
+    this.events.push({ type: 'cast', unitId: u.id, abilityId: def.id, kind: def.kind, tags: def.tags, color: def.color, x: u.x, y: u.y });
+    if (def.ai !== 'escape' && def.ai !== 'heal') h.lastCombatAt = this.time;
+    if (!cooldownStarted || this.cooldownOverride !== null) this.startCooldown(u, inst);
+    const ef = h.effects;
     if (ef.bulwarkCast && this.time >= (h.nextSpellshield ?? 0)) {
       h.nextSpellshield = this.time + 1.5;
       this.shield(u, 55 * ef.bulwarkCast * levelScale(h.level), 2.5);
     }
-    if (ef.echo && inst.def.kind === 'basic' && this.rng.next() < Math.min(0.6, 0.3 * ef.echo)) {
-      const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
+    if (ef.echo && def.kind === 'basic' && this.rng.next() < Math.min(0.6, 0.3 * ef.echo)) {
+      const echo = { ...ctx, aim: { ...ctx.aim } };
       this.schedule(0.3, () => {
-        if (u.dead || this.winner || !inst.def.cast) return;
-        if (inst.def.cast(this, u, ctx) !== false) {
-          this.events.push({ type: 'cast', unitId: u.id, abilityId: inst.def.id, kind: inst.def.kind, tags: inst.def.tags, color: inst.def.color, x: u.x, y: u.y });
+        if (u.dead || this.winner || !def.cast) return;
+        if (def.cast(this, u, echo) !== false) {
+          this.events.push({ type: 'cast', unitId: u.id, abilityId: def.id, kind: def.kind, tags: def.tags, color: def.color, x: u.x, y: u.y });
         }
       });
     }
@@ -561,6 +660,8 @@ export class World {
 
   private kill(victim: Unit, src: Unit) {
     if (victim.dead) return;
+    this.interrupt(victim);
+    victim.slide = undefined;
     victim.dead = true;
     this.events.push({ type: 'die', unitId: victim.id, kind: victim.kind, team: victim.team, x: victim.x, y: victim.y, r: victim.radius });
     victim.hp = 0;
@@ -845,6 +946,7 @@ export class World {
     this.separate();
     this.updateProjectiles(dt);
     this.updateZones();
+    this.telegraphs = this.telegraphs.filter((tg) => tg.at > this.time);
     this.updateNovas();
 
     if (this.units.some((u) => u.dead && !u.hero)) {
@@ -973,7 +1075,12 @@ export class World {
     u.attackCd -= dt;
     if (u.kind === 'nexus') return;
     if (u.kind === 'tower') return this.towerAct(u);
-    if (u.stunUntil > t || u.invulnUntil > t) return;
+    if (u.slide) {
+      this.moveUnit(u, u.x + u.slide.vx * dt, u.y + u.slide.vy * dt);
+      if (t >= u.slide.until) u.slide = undefined;
+      return;
+    }
+    if (u.stunUntil > t || u.invulnUntil > t || u.castUntil > t) return;
 
     if (u.dash) {
       const d = u.dash;

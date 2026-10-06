@@ -3,26 +3,28 @@ import type { HeroDef } from '../sim/heroes';
 import type { Rng } from '../sim/rng';
 import { RARITIES, SLOTS, type Slot } from '../sim/types';
 import { heroImg } from '../game/heroIcons';
+import { spellCard } from './cards';
 import { el } from './dom';
 
 export const SLOT_LABEL: Record<Slot, string> = { P: 'Passive', Q: 'Ability', W: 'Ability', E: 'Ability', R: 'Ultimate' };
 const DRAFT_SECONDS = 60;
 
+/** One glyph for an ability's main role, shown in the card corner. */
+const TAG_GLYPH: Record<string, string> = {
+  damage: '⚔', area: '◎', skillshot: '➳', 'long range': '➳', slow: '❄', stun: '✷', pull: '⤓', knockback: '⤒',
+  mobility: '➟', tank: '⛨', shield: '⛨', heal: '✚', support: '✚', invisibility: '◌', 'attack speed': '⚡',
+  'movement speed': '➟', 'on-hit': '⚔', global: '◉', buff: '▲', bounce: 'ϟ', lifesteal: '✚', execute: '☠',
+};
+
 export function optionCard(o: DraftOption, hero: HeroDef, onClick?: () => void) {
   const r = RARITIES[o.rarity];
   const p = r.mult * hero.spellPower;
-  const meta = [
-    ...o.def.tags.slice(0, 3).map((t) => el('i', { text: t })),
-    o.def.cooldown ? el('i', { text: `CD ${o.def.cooldown}s` }) : null,
-  ];
-  return el('button.card', { style: `--rc:${r.color};--ac:${o.def.color}`, onclick: onClick }, [
-    el('div.top', {}, [
-      el('div.icon', { text: o.def.icon }),
-      el('div', {}, [el('div.name', { text: o.def.name }), el('div.rar', { text: r.label })]),
-    ]),
-    el('div.desc', { text: o.def.desc(p, r.mult) }),
-    el('div.meta', {}, meta),
-  ]);
+  const glyph = o.def.tags.map((t) => TAG_GLYPH[t]).find(Boolean);
+  return spellCard({
+    icon: o.def.icon, name: o.def.name, line: o.def.short(p, r.mult), rarity: o.rarity, color: o.def.color,
+    corner: glyph, badge: o.def.cooldown ? `${o.def.cooldown}s` : undefined,
+    title: `${o.def.desc(p, r.mult)}\n${o.def.tags.join(' · ')}`, onClick,
+  });
 }
 
 export function showDraft(root: HTMLElement, hero: HeroDef, draft: Draft, rng: Rng, onLock: (p: Picks) => void) {
@@ -73,7 +75,7 @@ export function showDraft(root: HTMLElement, hero: HeroDef, draft: Draft, rng: R
             stat('Move', String(hero.moveSpeed)),
             stat('Spell pow', `${Math.round(hero.spellPower * 100)}%`),
           ]),
-          el('div.random-note', { text: 'Your hero was assigned at random, ARAM style. Numbers on the cards already include its spell power.' }),
+          el('div.random-note', { text: 'Random hero. Card numbers include its spell power. Hover a card for details.' }),
         ]),
         el('div.rows', {}, rows),
       ]),

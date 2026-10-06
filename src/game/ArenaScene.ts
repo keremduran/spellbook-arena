@@ -242,6 +242,38 @@ export class ArenaScene extends Phaser.Scene {
     const sel = this.hooks.selected?.() ?? null;
     g.clear();
 
+    // Ground warnings for wind-ups: enemy ones in danger red with the spell's color filling in.
+    for (const tg of w.telegraphs) {
+      const enemy = tg.team !== view;
+      const c = hex(tg.color);
+      const edge = enemy ? 0xff5252 : 0xffffff;
+      const prog = Math.max(0, Math.min(1, (t - tg.start) / Math.max(0.01, tg.at - tg.start)));
+      if (tg.shape === 'circle') {
+        g.fillStyle(enemy ? 0xff1744 : c, enemy ? 0.14 : 0.08).fillCircle(tg.x, tg.y, tg.size);
+        g.fillStyle(c, 0.3).fillCircle(tg.x, tg.y, tg.size * prog);
+        g.lineStyle(3, edge, enemy ? 0.85 : 0.4).strokeCircle(tg.x, tg.y, tg.size);
+      } else {
+        const dx = tg.x2 - tg.x;
+        const dy = tg.y2 - tg.y;
+        const l = Math.hypot(dx, dy) || 1;
+        const nx = (-dy / l) * tg.size;
+        const ny = (dx / l) * tg.size;
+        const quad = (k: number) => [
+          { x: tg.x + nx, y: tg.y + ny }, { x: tg.x + dx * k + nx, y: tg.y + dy * k + ny },
+          { x: tg.x + dx * k - nx, y: tg.y + dy * k - ny }, { x: tg.x - nx, y: tg.y - ny },
+        ];
+        g.fillStyle(enemy ? 0xff1744 : c, enemy ? 0.16 : 0.08).fillPoints(quad(1), true);
+        g.fillStyle(c, 0.35).fillPoints(quad(prog), true);
+        g.lineStyle(2, edge, enemy ? 0.85 : 0.4).strokePoints(quad(1), true);
+      }
+      // The caster glows while charging up.
+      const caster = w.unit(tg.ownerId);
+      if (caster && !caster.dead) {
+        g.lineStyle(4, c, 0.9).beginPath();
+        g.arc(caster.x, caster.y, caster.radius + 10, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * prog);
+        g.strokePath();
+      }
+    }
     for (const z of w.zones) {
       const c = hex(z.color);
       g.fillStyle(c, 0.13).fillCircle(z.x, z.y, z.radius);

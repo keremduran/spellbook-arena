@@ -126,6 +126,8 @@ export interface HeroState {
   multiAt: number;
   /** Joystick direction for touch controls; overrides orders while set. */
   moveDir: Vec | null;
+  /** Thumb is on the joystick (touch): don't auto-attack, even inside its dead zone. */
+  steering?: boolean;
   /** How far the joystick is pushed, 0..1 (touch only); scales dash/blink distance. */
   moveMag?: number;
   retreating: boolean;

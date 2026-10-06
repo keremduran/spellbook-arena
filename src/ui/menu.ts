@@ -1,7 +1,7 @@
 import { el } from './dom';
 import { musicPicker } from './musicPicker';
 
-export const VERSION = 'v4.7 · smooth movement';
+export const VERSION = 'v4.8 · steady hero tokens';
 
 export interface Settings {
   mode: 'play' | 'manage';

@@ -1132,7 +1132,7 @@ export class World {
       return;
     }
     // Idle player heroes auto-attack whatever is in range, preferring heroes.
-    if (h?.isPlayer && u.attackCd <= 0) {
+    if (h?.isPlayer && !h.steering && u.attackCd <= 0) {
       let best: Unit | undefined;
       let bestScore = Infinity;
       for (const e of this.units) {

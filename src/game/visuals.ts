@@ -333,7 +333,8 @@ export class Visuals {
       prev.x = u.x;
       prev.y = u.y;
       this.wasMoving.set(u.id, prev);
-      const bob = moved > 0.3 ? Math.abs(Math.sin(prev.phase)) * 3 : 0;
+      // Walking bob for minions only; on hero tokens it read as vibration.
+      const bob = u.kind !== 'hero' && moved > 0.3 ? Math.abs(Math.sin(prev.phase * 0.5)) * 2 : 0;
       const alpha = u.stealthUntil > t || u.invulnUntil > t ? 0.45 : 1;
       const r = u.radius;
       // Art faces up; turn it toward the facing direction, with a little sway while walking
@@ -341,7 +342,9 @@ export class Visuals {
       const angle = Math.atan2(u.facing.y, u.facing.x) + Math.PI / 2;
       const sway = moved > 0.3 ? Math.sin(prev.phase * 0.5) * 0.12 : 0;
       const lungeAge = now - (this.lunges.get(u.id) ?? -1e9);
-      const lunge = lungeAge < 140 ? Math.sin((lungeAge / 140) * Math.PI) * r * 0.35 : 0;
+      // Lunge only for melee swings; ranged attackers fire often and from afar, so it looked like pulsing.
+      const melee = u.stats.attackRange < 200;
+      const lunge = melee && lungeAge < 140 ? Math.sin((lungeAge / 140) * Math.PI) * r * 0.35 : 0;
       const bx = u.x + u.facing.x * lunge;
       const by = u.y - bob + u.facing.y * lunge;
       g.fillStyle(0x000000, 0.35).fillEllipse(u.x, u.y + r * 0.75, r * 2.1, r * 0.9);

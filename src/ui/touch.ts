@@ -33,10 +33,12 @@ export function createJoystick(parent: HTMLElement, player: Unit) {
     active = null;
     knob.style.transform = '';
     player.hero!.moveDir = null;
+    player.hero!.steering = false;
   };
 
   pad.addEventListener('pointerdown', (e) => {
     active = e.pointerId;
+    player.hero!.steering = true;
     pad.setPointerCapture(e.pointerId);
     move(e);
   });

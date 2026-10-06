@@ -215,7 +215,7 @@ menu();
 
 // Installable app: register the offline cache when running as a normal page (not inside an
 // embedding frame such as the Claude artifact viewer, where service workers aren't allowed).
-if ('serviceWorker' in navigator && window.top === window && location.protocol === 'https:') {
+if ('serviceWorker' in navigator && window.top === window && window.isSecureContext) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('./sw.js').catch(() => undefined);
   });

@@ -1,8 +1,21 @@
 // Offline support: the game shell is cached as it loads, then served from cache first.
 // Pages (navigations) try the network first so a new deploy is picked up when online.
-const CACHE = 'spellbook-v1';
+const CACHE = 'spellbook-v2';
 
-self.addEventListener('install', () => self.skipWaiting());
+// Precache the whole game on install, so a single visit is enough to play offline: fetch the
+// page, then every script/style/icon it references.
+self.addEventListener('install', (e) => {
+  e.waitUntil(
+    (async () => {
+      const cache = await caches.open(CACHE);
+      const res = await fetch('./', { cache: 'reload' });
+      const html = await res.clone().text();
+      await cache.put('./', res);
+      const urls = [...html.matchAll(/(?:src|href)="(\.\/[^"]+)"/g)].map((m) => m[1]);
+      await cache.addAll([...new Set(urls)]);
+    })().then(() => self.skipWaiting()),
+  );
+});
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()

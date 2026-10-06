@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { FOUNTAIN, LANE_Y, MAP_H, MAP_W, STEP } from '../sim/constants';
+import { FOUNTAIN, LANE_Y, MAP_H, MAP_W, STEP, laneDir } from '../sim/constants';
 import type { GameEvent, Slot, Unit, Vec } from '../sim/types';
 import type { World } from '../sim/world';
 import { heroIconBase64 } from './heroIcons';
@@ -167,6 +167,31 @@ export class ArenaScene extends Phaser.Scene {
     this.aim = slot && dir ? { slot, dir } : null;
   }
 
+  /** While the player is dead: the ally being watched. */
+  private watchId?: number;
+
+  /**
+   * Where the camera goes while you're dead: the most advanced living ally (kept until they
+   * die, then the next most advanced), or, with the whole team dead, your most advanced
+   * standing tower or nexus.
+   */
+  private deathCam(me: Unit): { x: number; y: number } {
+    const w = this.world;
+    const dir = laneDir(me.team);
+    const current = this.watchId !== undefined ? w.unit(this.watchId) : undefined;
+    if (current && !current.dead) return current;
+    const allies = w.heroList.filter((u) => u.team === me.team && u !== me && !u.dead);
+    if (allies.length) {
+      const front = allies.reduce((a, b) => (b.x * dir > a.x * dir ? b : a));
+      this.watchId = front.id;
+      return front;
+    }
+    this.watchId = undefined;
+    const structures = w.units.filter((u) => u.team === me.team && !u.dead && (u.kind === 'tower' || u.kind === 'nexus'));
+    if (structures.length) return structures.reduce((a, b) => (b.x * dir > a.x * dir ? b : a));
+    return FOUNTAIN[me.team];
+  }
+
   /** Spectator camera jump (minimap clicks). */
   lookAt(x: number, y: number) {
     this.camPos = { x, y };
@@ -203,7 +228,8 @@ export class ArenaScene extends Phaser.Scene {
     const cam = this.cameras.main;
     let focus: { x: number; y: number };
     if (this.player) {
-      focus = this.player.dead ? FOUNTAIN[this.player.team] : this.player;
+      focus = this.player.dead ? this.deathCam(this.player) : this.player;
+      if (!this.player.dead) this.watchId = undefined;
     } else {
       const sel = this.hooks.selected?.();
       if (sel) this.camPos = sel.dead ? { ...FOUNTAIN[sel.team] } : { x: sel.x, y: sel.y };

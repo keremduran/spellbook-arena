@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v4 · dodgeable spells, new cards';
+export const VERSION = 'v4.1 · death camera';
 
 export interface Settings {
   mode: 'play' | 'manage';

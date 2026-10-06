@@ -39,7 +39,6 @@ export class ArenaScene extends Phaser.Scene {
   private g!: Phaser.GameObjects.Graphics;
   private labels = new Map<number, { icon: Phaser.GameObjects.Text; name: Phaser.GameObjects.Text }>();
   private floats: FloatText[] = [];
-  private acc = 0;
   private mouse = { x: 0, y: 0 };
   private rightDown = false;
   private baseZoom = 1;
@@ -245,14 +244,17 @@ export class ArenaScene extends Phaser.Scene {
   update(_time: number, deltaMs: number) {
     const dt = Math.min(deltaMs / 1000, 0.1);
     if (!this.hooks.isPaused() && !this.world.winner) {
-      this.acc += dt * (this.hooks.speed?.() ?? 1);
+      // Advance the sim by exactly this frame's time (split into steps no longer than STEP),
+      // so units move every rendered frame. Fixed 30 Hz steps made movement pulse on 60/120 Hz
+      // screens: units moved on some frames and not others while the camera eased smoothly.
+      let left = dt * (this.hooks.speed?.() ?? 1);
       let steps = 0;
-      while (this.acc >= STEP && steps < 16) {
-        this.world.update(STEP);
-        this.acc -= STEP;
+      while (left > 1e-4 && steps < 16) {
+        const step = Math.min(left, STEP);
+        this.world.update(step);
+        left -= step;
         steps++;
       }
-      if (steps >= 16) this.acc = 0;
     }
     if (this.world.events.length) {
       const events = this.world.events.splice(0);

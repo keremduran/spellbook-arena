@@ -1,7 +1,7 @@
 import { el } from './dom';
 import { musicPicker } from './musicPicker';
 
-export const VERSION = 'v4.6 · touch & dash fixes, iPhone sound';
+export const VERSION = 'v4.7 · smooth movement';
 
 export interface Settings {
   mode: 'play' | 'manage';

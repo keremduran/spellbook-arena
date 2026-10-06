@@ -11,6 +11,7 @@ export const TEAM_COLOR: Record<Team, number> = { blue: 0x4fa3ff, red: 0xff5a5a 
 const darken = (c: number, k: number) => (Math.round(((c >> 16) & 255) * (1 - k)) << 16) | (Math.round(((c >> 8) & 255) * (1 - k)) << 8) | Math.round((c & 255) * (1 - k));
 
 interface Swing {
+  heavy?: boolean;
   x: number;
   y: number;
   a: number;
@@ -357,6 +358,14 @@ export class Visuals {
         else sp.orb.setTint(darken(hex(u.hero!.def.color), 0.45));
         sp.icon?.setPosition(bx, by).setScale((r * 1.5) / 160).setAlpha(alpha);
         g.lineStyle(4, tc, alpha).strokeCircle(bx, by, r + 2);
+        // Spellveil charged: a faint violet veil around the hero.
+        const hv = u.hero!;
+        if (hv.abilities.P?.def.id === 'spellveil' && (hv.veilReadyAt ?? 0) <= t) g.lineStyle(2, 0xce93d8, 0.55 * alpha).strokeCircle(bx, by, r + 8);
+        // Blink return point waiting for a recast.
+        if (hv.blinkReturn && hv.blinkReturn.until > t && (!viewerTeam || u.team === viewerTeam)) {
+          g.lineStyle(2, 0xb388ff, 0.6).strokeCircle(hv.blinkReturn.x, hv.blinkReturn.y, 18);
+          g.lineStyle(1, 0xb388ff, 0.25).lineBetween(bx, by, hv.blinkReturn.x, hv.blinkReturn.y);
+        }
         const fx = u.facing.x;
         const fy = u.facing.y;
         const tip = r + 13;
@@ -394,12 +403,26 @@ export class Visuals {
     }
 
     // Melee swings: a bright arc in the facing direction.
-    this.swings = this.swings.filter((s) => now - s.born < 160);
+    this.swings = this.swings.filter((s) => now - s.born < (s.heavy ? 240 : 180));
     for (const s of this.swings) {
-      const k = (now - s.born) / 160;
-      g.lineStyle(5 * (1 - k), s.color, 0.9 * (1 - k));
+      const life = s.heavy ? 240 : 180;
+      const k = (now - s.born) / life;
+      const spread = s.heavy ? 1.9 : 1.25;
+      const sweep = (s.heavy ? 1.2 : 0.8) * k;
+      const a0 = s.a - spread + sweep;
+      const a1 = s.a + spread * 0.55 + sweep;
+      // Wide soft trail, bright edge, and a thin inner highlight: reads as a blade slash.
+      g.lineStyle((s.heavy ? 22 : 14) * (1 - k), s.color, 0.22 * (1 - k));
       g.beginPath();
-      g.arc(s.x, s.y, s.r, s.a - 1.1 + k * 0.6, s.a + 0.6 + k * 0.6);
+      g.arc(s.x, s.y, s.r * 0.85, a0, a1);
+      g.strokePath();
+      g.lineStyle((s.heavy ? 7 : 5) * (1 - k * 0.6), s.color, 0.95 * (1 - k));
+      g.beginPath();
+      g.arc(s.x, s.y, s.r, a0, a1);
+      g.strokePath();
+      g.lineStyle(2, 0xffffff, 0.9 * (1 - k));
+      g.beginPath();
+      g.arc(s.x, s.y, s.r + 3, a0 + 0.2, a1);
       g.strokePath();
     }
     // Tower beams.
@@ -517,8 +540,19 @@ export class Visuals {
             this.sound('shoot', e.x, e.y, mine);
           } else {
             const u = w.unit(e.unitId);
-            this.swings.push({ x: e.x, y: e.y, a: Math.atan2(e.ty - e.y, e.tx - e.x), r: (u?.radius ?? 24) + 22, color: 0xffffff, born: now });
-            this.sound('swing', e.x, e.y, mine);
+            const isHero = u?.kind === 'hero';
+            const color = isHero ? (e.heavy ? 0xffd54f : hex(u!.hero!.def.color)) : 0xffffff;
+            this.swings.push({ x: e.x, y: e.y, a: Math.atan2(e.ty - e.y, e.tx - e.x), r: (u?.radius ?? 24) + (e.heavy ? 40 : 26), color, born: now, heavy: e.heavy });
+            if (isHero) {
+              // Impact: sparks at the target, a bigger burst and a little shake on heavy blows.
+              this.sparks.setParticleTint(e.heavy ? 0xffd54f : color);
+              this.sparks.explode(e.heavy ? 22 : 7, e.tx, e.ty);
+              if (e.heavy) {
+                w.fx({ kind: 'ring', x: e.tx, y: e.ty, r: 120, color: '#ffe082', duration: 0.25 });
+                if (mine) this.scene.cameras.main.shake(90, 0.004);
+              }
+            }
+            this.sound(e.heavy ? 'crit' : 'swing', e.x, e.y, mine);
           }
           break;
         }

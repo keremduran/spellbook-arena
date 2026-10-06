@@ -1,5 +1,5 @@
 import type { Rng } from './rng';
-import { RARITIES, RARITY_ORDER, type BoonInst, type Mods, type Rarity } from './types';
+import { MAX_RANK, RARITIES, RARITY_ORDER, ROMAN, type AbilityInst, type BoonInst, type Mods, type Rarity, type Slot } from './types';
 
 /**
  * Effect boons change how a hero fights (Hades style). Their strength is the summed rarity
@@ -14,8 +14,10 @@ export interface BoonDef {
   id: string;
   name: string;
   icon: string;
-  /** 'effect' boons change behaviour; 'stat' boons are plain numbers. */
-  kind: 'stat' | 'effect';
+  /** 'effect' boons change behaviour; 'stat' boons are plain numbers; 'upgrade' ranks up an ability. */
+  kind: 'stat' | 'effect' | 'upgrade';
+  /** Upgrade boons: which ability slot they rank up. */
+  slot?: Slot;
   /** A few words for the card. */
   short: (m: number) => string;
   desc: (m: number) => string;
@@ -73,7 +75,30 @@ export const rollRarity = (rng: Rng, minRarity: Rarity = 'common'): Rarity => {
  * Three options. At least one is an effect boon so every choice can change how you play,
  * and effects you already own are more likely to show up again (they stack).
  */
-export const rollBoonOffer = (rng: Rng, count = 3, minRarity: Rarity = 'common', owned: BoonInst[] = []): BoonInst[] => {
+/** Ranks a Legendary rank-up adds (others add one). */
+export const upgradeRanks = (r: Rarity) => (r === 'legendary' ? 2 : 1);
+
+/** A rank-up offer for one of the hero's abilities (Hades "Pom of Power" style). */
+export function upgradeBoon(slot: Slot, inst: AbilityInst): BoonDef {
+  return {
+    id: `up_${slot}`, slot, kind: 'upgrade', name: inst.def.name, icon: inst.def.icon,
+    short: (m) => `rank ${ROMAN[inst.rank]} → ${ROMAN[Math.min(MAX_RANK, inst.rank + (m >= 2.5 ? 2 : 1))]}`,
+    desc: (m) => `Rank up ${inst.def.name} (${slot}) by ${m >= 2.5 ? 2 : 1}: +30% power and −7% cooldown per rank, longer and stronger effects.`,
+  };
+}
+
+export const rollBoonOffer = (
+  rng: Rng, count = 3, minRarity: Rarity = 'common', owned: BoonInst[] = [], abilities: Partial<Record<Slot, AbilityInst>> = {},
+): BoonInst[] => {
+  // One card in three can be a rank-up for an ability that isn't maxed (ultimates less often).
+  const upgradable = (Object.entries(abilities) as [Slot, AbilityInst][]).filter(([, a]) => a.rank < MAX_RANK);
+  if (upgradable.length && rng.next() < 0.4) {
+    const [slot, inst] = rng.weighted(upgradable, ([s]) => (s === 'R' ? 0.5 : s === 'P' ? 0.8 : 1));
+    const rest = rollBoonOffer(rng, count - 1, minRarity, owned);
+    const up: BoonInst = { def: upgradeBoon(slot, inst), rarity: rollRarity(rng, minRarity) };
+    const at = rng.int(count);
+    return [...rest.slice(0, at), up, ...rest.slice(at)];
+  }
   const ownedEffects = new Set(owned.filter((b) => b.def.kind === 'effect').map((b) => b.def.id));
   const pickEffect = () => rng.weighted(EFFECT_BOONS, (b) => (ownedEffects.has(b.id) ? 2.5 : 1));
   const chosen: BoonDef[] = [pickEffect()];
@@ -88,7 +113,7 @@ export const rollBoonOffer = (rng: Rng, count = 3, minRarity: Rarity = 'common',
 /** Bots take the highest rarity option, preferring effect boons on ties. */
 export const bestBoonIndex = (offer: BoonInst[]) => {
   let best = 0;
-  const score = (b: BoonInst) => RARITY_ORDER.indexOf(b.rarity) * 2 + (b.def.kind === 'effect' ? 1 : 0);
+  const score = (b: BoonInst) => RARITY_ORDER.indexOf(b.rarity) * 2 + (b.def.kind === 'effect' ? 1 : b.def.kind === 'upgrade' ? 1.5 : 0);
   offer.forEach((b, i) => {
     if (score(b) > score(offer[best])) best = i;
   });

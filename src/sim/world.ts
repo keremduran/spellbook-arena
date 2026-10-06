@@ -1,6 +1,6 @@
 import { thinkCreep, thinkHero } from './ai';
-import type { AbilityDef, CastCtx } from './abilities';
-import { bestBoonIndex, rollBoonOffer, type EffectId } from './boons';
+import { veilCooldown, type AbilityDef, type CastCtx } from './abilities';
+import { bestBoonIndex, rollBoonOffer, upgradeRanks, type EffectId } from './boons';
 import {
   DIFFICULTY, FIRST_WAVE, FOUNTAIN, FOUNTAIN_RADIUS, LANE_Y, MAP_W, MAX_LEVEL, RANGED_THRESHOLD, RUNE_FIRST, RUNE_INTERVAL, RUNE_RADIUS,
   STRUCTURE_X, WAVE_INTERVAL, Y_MAX, Y_MIN, laneDir, mirrorX, respawnTime, xpToNext, type Difficulty,
@@ -9,7 +9,7 @@ import {
 import { heroBaseStats, levelScale, type HeroDef } from './heroes';
 import { Rng } from './rng';
 import {
-  RARITIES, STAT_KEYS, emptyStats, otherTeam,
+  MAX_RANK, RARITIES, STAT_KEYS, emptyStats, otherTeam, rankCooldown, rankMult, rankPower, ROMAN,
   type AbilityInst, type BoonInst, type Fx, type GameEvent, type Mods, type Nova, type Projectile, type Rarity, type Slot,
   type Stats, type Telegraph, type Team, type Unit, type UnitKind, type Vec, type Zone,
 } from './types';
@@ -54,6 +54,11 @@ const STAT_PREVIEW: [keyof Stats, string, (v: number) => string, number?][] = [
 /** Extra damage taken by a hero on a kill streak: +5% per kill past 4, up to +40%. */
 export const bountyBonus = (streak: number) => Math.min(0.4, Math.max(0, streak - 4) * 0.05);
 const MINION_POWER = 1.15;
+/** Built-in damage reduction for melee heroes. */
+const MELEE_DR = 0.1;
+/** Every 3rd melee hero attack is a heavy blow: bonus damage and a small cleave. */
+const HEAVY_EVERY = 3;
+const HEAVY_BONUS = 0.6;
 /** XP for taking down a hero of the given level (raised so winning fights snowballs into boons). */
 const KILL_XP = (level: number) => 150 + 36 * level;
 const ASSIST_XP = (level: number) => 75 + 19 * level;
@@ -77,6 +82,8 @@ export class World {
   cooldownOverride: number | null = null;
   /** Damage multiplier while a projectile hit resolves. */
   dmgScale = 1;
+  /** Units whose next landing attack is an ambush. */
+  private ambushNext = new Set<number>();
   rune = { x: MAP_W / 2, y: LANE_Y, active: false, nextAt: RUNE_FIRST };
   playerTeam: Team | null = null;
   private firstBlood = false;
@@ -108,7 +115,7 @@ export class World {
   }
 
   private buildBase(team: Team) {
-    const tower = (hp: number): Stats => ({ ...emptyStats(), maxHp: hp, ad: 130, attackRange: 560, attackSpeed: 0.85 });
+    const tower = (hp: number): Stats => ({ ...emptyStats(), maxHp: hp, ad: 165, attackRange: 560, attackSpeed: 0.85 });
     const outer = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.outer), LANE_Y, 42, tower(5000));
     outer.structure = { consecutive: 0 };
     const inner = this.makeUnit('tower', team, mirrorX(team, STRUCTURE_X.inner), LANE_Y, 42, tower(5400));
@@ -123,7 +130,7 @@ export class World {
     const u = this.makeUnit('hero', setup.team, f.x + laneDir(setup.team) * 60, f.y + this.rng.range(-120, 120), 24, base);
     const abilities: Partial<Record<Slot, AbilityInst>> = {};
     for (const [slot, pick] of Object.entries(setup.picks)) {
-      if (pick) abilities[slot as Slot] = { def: pick.def, rarity: pick.rarity, readyAt: 0 };
+      if (pick) abilities[slot as Slot] = { def: pick.def, rarity: pick.rarity, readyAt: 0, rank: 1 };
     }
     u.hero = {
       def: setup.def, name: setup.name, isPlayer: !!setup.isPlayer, managed: !!setup.managed, directive: 'auto', level: 1, xp: 0, kills: 0, deaths: 0, assists: 0,
@@ -217,6 +224,16 @@ export class World {
   underdog(team: Team) {
     const behind = team === 'blue' ? this.kills.red - this.kills.blue : this.kills.blue - this.kills.red;
     return Math.min(0.25, Math.max(0, behind - 8) * 0.0125);
+  }
+
+  /** Ability damage power including its rank. */
+  instPower(u: Unit, inst: AbilityInst) {
+    return this.power(u, inst.rarity) * rankPower(inst.rank);
+  }
+
+  /** Ability rarity multiplier including its rank. */
+  instMult(inst: AbilityInst) {
+    return RARITIES[inst.rarity].mult * rankMult(inst.rank);
   }
 
   power(u: Unit, rarity: Rarity) {
@@ -357,6 +374,38 @@ export class World {
     return null;
   }
 
+  /**
+   * Spellveil: the first enemy spell hit is blocked entirely (any size), burns are cleared and
+   * further spell hits are ignored for 0.6s so a whole zone tick, echo or split volley is caught.
+   */
+  private veilBlocks(u: Unit): boolean {
+    const h = u.hero;
+    const p = h?.abilities.P;
+    if (!h || !p || p.def.id !== 'spellveil') return false;
+    if ((h.veilImmuneUntil ?? 0) > this.time) return true;
+    if ((h.veilReadyAt ?? 0) > this.time) return false;
+    h.veilImmuneUntil = this.time + 0.6;
+    h.veilReadyAt = this.time + veilCooldown(h.level, this.instMult(p));
+    u.dots = [];
+    this.fx({ kind: 'ring', x: u.x, y: u.y, r: u.radius + 26, color: '#ce93d8', duration: 0.5 });
+    this.fx({ kind: 'burst', x: u.x, y: u.y, r: 70, color: '#f3e5f5', duration: 0.35 });
+    this.events.push({ type: 'damage', x: u.x, y: u.y - u.radius, amount: 0, crit: false, srcId: u.id, tgtId: u.id, blocked: true });
+    return true;
+  }
+
+  /** Forces nearby enemy heroes to attack `u` for `dur` seconds. */
+  taunt(u: Unit, radius: number, dur: number) {
+    for (const e of this.enemiesNear(u.team, u.x, u.y, radius)) {
+      if (e.kind !== 'hero') continue;
+      e.tauntedBy = u.id;
+      e.tauntUntil = this.time + dur;
+      e.hero!.moveDir = null;
+      this.interrupt(e);
+      this.fx({ kind: 'line', x: u.x, y: u.y, x2: e.x, y2: e.y, r: 0, color: '#ff8a65', duration: 0.35, width: 3 });
+    }
+    this.fx({ kind: 'ring', x: u.x, y: u.y, r: radius, color: '#ff7043', duration: 0.45 });
+  }
+
   /** Cancels a wind-up in progress (stuns, death). */
   interrupt(u: Unit) {
     if (u.castUntil <= this.time) return;
@@ -419,6 +468,7 @@ export class World {
   /** Deals damage and returns the amount actually dealt to health. */
   damage(src: Unit, tgt: Unit, amount: number, type: 'attack' | 'spell' | 'true', crit = false): number {
     if (tgt.dead || amount <= 0 || tgt.invulnUntil > this.time || this.isProtected(tgt)) return 0;
+    if (type === 'spell' && src.team !== tgt.team && this.veilBlocks(tgt)) return 0;
     amount *= this.dmgScale;
     if (src.stats.execute > 0 && tgt.hp / tgt.stats.maxHp < 0.35) amount *= 1 + src.stats.execute;
     if (tgt.structure && src.kind === 'hero' && !this.minionsNear(src.team, tgt, 700)) amount *= 0.4;
@@ -460,7 +510,10 @@ export class World {
       if (type === 'attack' && src.stats.lifesteal > 0) this.heal(src, dealt * src.stats.lifesteal, true);
       if (type === 'spell' && src.stats.spellVamp > 0) this.heal(src, dealt * src.stats.spellVamp, true);
       tgt.damagedBy.set(src.id, this.time);
-      if (tgt.kind === 'hero') src.lastHitHeroAt = this.time;
+      if (tgt.kind === 'hero') {
+        src.lastHitHeroAt = this.time;
+        src.lastHitHeroId = tgt.id;
+      }
     }
     if (tgt.hero) tgt.hero.lastCombatAt = this.time;
     if (type !== 'true' && tgt.stats.thorns > 0 && src !== tgt && !src.dead && src.kind !== 'tower') {
@@ -489,10 +542,22 @@ export class World {
     dmg += u.stats.onHitDamage;
     if (u.kind === 'tower') dmg = this.towerDamage(u, t);
     if (u.hero) u.hero.attackCount++;
+    const heavy = !!u.hero && u.stats.attackRange < RANGED_THRESHOLD && u.hero.attackCount % HEAVY_EVERY === 0;
+    if (this.ambushNext.delete(u.id)) {
+      const p = u.hero!.abilities.P!;
+      dmg *= 1 + 0.8 * this.instMult(p);
+      this.slow(t, 0.4, 1.5);
+      this.fx({ kind: 'burst', x: t.x, y: t.y, r: 80, color: '#b39ddb', duration: 0.35 });
+    }
+    if (heavy) {
+      // Heavy blow: +60% damage on the target and half that to enemies right behind it.
+      dmg *= 1 + HEAVY_BONUS;
+      for (const e of this.enemiesNear(u.team, t.x, t.y, 120)) if (e !== t) this.damage(u, e, dmg * 0.5, 'attack');
+    }
     this.damage(u, t, dmg, 'attack', crit);
     if (u.hero) this.attackEffects(u, t, dmg);
     const passive = u.hero?.abilities.P;
-    if (passive?.def.onAttack && !t.dead) passive.def.onAttack(this, u, t, RARITIES[passive.rarity].mult, this.power(u, passive.rarity));
+    if (passive?.def.onAttack && !t.dead) passive.def.onAttack(this, u, t, this.instMult(passive), this.instPower(u, passive));
   }
 
   /** On-hit effect boons. */
@@ -530,7 +595,8 @@ export class World {
     const minutes = this.time / 60;
     if (t.kind === 'creep') return t.stats.maxHp * 0.51;
     const s = tower.structure!;
-    return (tower.stats.ad + minutes * 14) * (1 + 0.3 * s.consecutive);
+    // Grows through the game and heats up on consecutive shots at the same hero (max +150%).
+    return (tower.stats.ad + minutes * 22) * (1 + Math.min(1.5, 0.35 * s.consecutive));
   }
 
   private performAttack(u: Unit, t: Unit) {
@@ -539,17 +605,21 @@ export class World {
     const dy = t.y - u.y;
     const d = len(dx, dy) || 1;
     u.facing = { x: dx / d, y: dy / d };
+    // Ambush (Assassin's Shroud): the first attack out of invisibility hits much harder.
+    const ambush = !!u.hero && u.stealthUntil > this.time && u.hero.abilities.P?.def.id === 'shroud';
     if (u.hero) {
       u.stealthUntil = 0;
       u.hero.lastCombatAt = this.time;
     }
+    if (ambush) this.ambushNext.add(u.id);
     if (u.kind === 'tower') {
       const s = u.structure!;
       s.consecutive = s.targetId === t.id && t.kind === 'hero' ? s.consecutive + 1 : 0;
       s.targetId = t.id;
     }
     const ranged = u.kind === 'tower' || u.stats.attackRange >= RANGED_THRESHOLD;
-    if (u.kind !== 'creep') this.events.push({ type: 'attack', unitId: u.id, x: u.x, y: u.y, tx: t.x, ty: t.y, ranged, tower: u.kind === 'tower', tgtId: t.id });
+    const heavy = !!u.hero && !ranged && (u.hero.attackCount + 1) % HEAVY_EVERY === 0;
+    if (u.kind !== 'creep') this.events.push({ type: 'attack', unitId: u.id, x: u.x, y: u.y, tx: t.x, ty: t.y, ranged, tower: u.kind === 'tower', tgtId: t.id, heavy });
     if (ranged) {
       this.projectiles.push({
         id: this.nextId++, owner: u, team: u.team, x: u.x, y: u.y, vx: 0, vy: 0, speed: u.kind === 'tower' ? 1300 : 1100,
@@ -581,7 +651,7 @@ export class World {
       d = 1;
     }
     const dir = { x: dx / d, y: dy / d };
-    const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
+    const ctx = { aim: { ...aim }, dir, p: this.instPower(u, inst), m: this.instMult(inst) };
     // Blink sets a one-off cooldown override inside its cast; never let it leak into this cast.
     this.cooldownOverride = null;
     if (def.id !== 'shadow_veil') u.stealthUntil = 0;
@@ -628,7 +698,7 @@ export class World {
 
   private startCooldown(u: Unit, inst: AbilityInst) {
     const h = u.hero!;
-    let cd = this.cooldownOverride ?? inst.def.cooldown;
+    let cd = (this.cooldownOverride ?? inst.def.cooldown) * rankCooldown(inst.rank);
     if (inst.def.kind === 'ult' && h.effects.overcharge) cd *= 1 - Math.min(0.6, 0.3 * h.effects.overcharge);
     inst.readyAt = this.time + cd * (1 - u.stats.cdr);
   }
@@ -792,7 +862,7 @@ export class World {
 
   offerBoon(u: Unit, minRarity: Rarity = 'common') {
     const h = u.hero!;
-    h.offers.push(rollBoonOffer(this.rng, 3, minRarity, h.boons));
+    h.offers.push(rollBoonOffer(this.rng, 3, minRarity, h.boons, h.abilities));
     if (h.isPlayer || h.managed) this.events.push({ type: 'offer', unitId: u.id });
     else this.pickBoon(u, bestBoonIndex(h.offers[0]));
   }
@@ -801,7 +871,13 @@ export class World {
     const h = u.hero!;
     const offer = h.offers.shift();
     if (!offer) return;
-    h.boons.push(offer[Math.max(0, Math.min(offer.length - 1, index))]);
+    const chosen = offer[Math.max(0, Math.min(offer.length - 1, index))];
+    h.boons.push(chosen);
+    if (chosen.def.kind === 'upgrade' && chosen.def.slot) {
+      const inst = h.abilities[chosen.def.slot];
+      if (inst) inst.rank = Math.min(MAX_RANK, inst.rank + upgradeRanks(chosen.rarity));
+      if (h.isPlayer) this.events.push({ type: 'announce', text: `${inst?.def.name ?? 'Ability'} ${ROMAN[inst?.rank ?? 1]}`, sub: 'Rank up!', team: u.team, unitId: u.id });
+    }
     h.effects = {};
     for (const b of h.boons) if (b.def.effect) h.effects[b.def.effect] = (h.effects[b.def.effect] ?? 0) + RARITIES[b.rarity].mult;
     this.recompute(u);
@@ -830,10 +906,12 @@ export class World {
       if (m.mul) for (const k in m.mul) mul[k as keyof Stats] += m.mul[k as keyof Stats] ?? 0;
     };
     const h = u.hero;
+    // Melee heroes fight in the thick of it: built-in toughness and a bit of extra speed.
+    if (h && h.def.range < 200) apply({ add: { damageReduction: MELEE_DR }, mul: { moveSpeed: 0.05 } });
     if (h) {
       const p = h.abilities.P;
       if (p) {
-        const m = RARITIES[p.rarity].mult;
+        const m = this.instMult(p);
         apply(p.def.mods?.(m));
         apply(p.def.dynamicMods?.(u, m));
       }
@@ -857,6 +935,14 @@ export class World {
    */
   previewBoon(u: Unit, b: BoonInst): string[] {
     const h = u.hero!;
+    if (b.def.kind === 'upgrade' && b.def.slot) {
+      const inst = h.abilities[b.def.slot];
+      if (!inst) return [];
+      const to = Math.min(MAX_RANK, inst.rank + upgradeRanks(b.rarity));
+      const lines = [`Rank ${ROMAN[inst.rank]} → ${ROMAN[to]}`, `Power ×${rankPower(inst.rank).toFixed(2)} → ×${rankPower(to).toFixed(2)}`];
+      if (inst.def.cooldown) lines.push(`Cooldown ${(inst.def.cooldown * rankCooldown(inst.rank)).toFixed(1)}s → ${(inst.def.cooldown * rankCooldown(to)).toFixed(1)}s`);
+      return lines;
+    }
     if (b.def.kind === 'effect' && b.def.effect) {
       const have = h.effects[b.def.effect] ?? 0;
       const total = have + RARITIES[b.rarity].mult;
@@ -931,7 +1017,14 @@ export class World {
       }
       if (u.hero) {
         const p = u.hero.abilities.P;
-        p?.def.onTick?.(this, u, dt, RARITIES[p.rarity].mult);
+        p?.def.onTick?.(this, u, dt, p ? this.instMult(p) : 1);
+        // Blink return window ran out: start the full cooldown now.
+        const br = u.hero.blinkReturn;
+        if (br && br.until <= this.time) {
+          u.hero.blinkReturn = undefined;
+          const inst = u.hero.abilities[br.slot];
+          if (inst) inst.readyAt = Math.max(inst.readyAt, this.time + (10 / Math.sqrt(RARITIES[inst.rarity].mult)) * rankCooldown(inst.rank) * (1 - u.stats.cdr) - 3);
+        }
         const own = FOUNTAIN[u.team];
         const foe = FOUNTAIN[otherTeam(u.team)];
         if (len(u.x - own.x, u.y - own.y) < FOUNTAIN_RADIUS) this.heal(u, u.stats.maxHp * 0.15 * dt, true);
@@ -1087,6 +1180,19 @@ export class World {
     }
     if (u.stunUntil > t || u.invulnUntil > t || u.castUntil > t) return;
 
+    // Taunted: walk at and attack the taunter, whatever else you wanted to do.
+    if ((u.tauntUntil ?? 0) > t && u.tauntedBy !== undefined) {
+      const src = this.unit(u.tauntedBy);
+      if (src && this.attackable(u, src)) {
+        u.order = { kind: 'attack', id: src.id };
+        if (this.inAttackRange(u, src)) {
+          if (u.attackCd <= 0) this.performAttack(u, src);
+        } else this.moveToward(u, src.x, src.y, dt);
+        return;
+      }
+      u.tauntUntil = 0;
+    }
+
     if (u.dash) {
       const d = u.dash;
       // Don't overshoot on the last step: only move for the time that was left.
@@ -1155,7 +1261,14 @@ export class World {
       u.structure!.consecutive = 0;
       return;
     }
-    const aggressor = inRange.find((e) => e.kind === 'hero' && this.time - e.lastHitHeroAt < 2);
+    // League-style aggro: an enemy hero who hurts one of our heroes standing in range draws
+    // fire at once ("call for help"); otherwise keep the current target until it dies or
+    // leaves; otherwise the nearest minion; heroes only when no minions are around.
+    const aggressor = inRange.find((e) => {
+      if (e.kind !== 'hero' || this.time - e.lastHitHeroAt > 1.5 || e.lastHitHeroId === undefined) return false;
+      const victim = this.unit(e.lastHitHeroId);
+      return !!victim && !victim.dead && victim.team === u.team && len(victim.x - u.x, victim.y - u.y) <= range + victim.radius + 80;
+    });
     const current = inRange.find((e) => e.id === u.structure!.targetId);
     const byDist = (a: Unit, b: Unit) => len(a.x - u.x, a.y - u.y) - len(b.x - u.x, b.y - u.y);
     const creep = inRange.filter((e) => e.kind === 'creep').sort(byDist)[0];

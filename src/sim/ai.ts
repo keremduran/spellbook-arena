@@ -44,9 +44,13 @@ function abilityPlan(w: World, u: Unit, mode: 'fight' | 'retreat', target?: Unit
         case 'damage':
           if (d <= def.range + target.radius) aim = lead;
           break;
-        case 'engage':
-          if (d <= def.range + 60 && d > 120 && (tPct < 0.6 || hpPct > 0.55) && !w.isProtected(target)) aim = lead;
+        case 'engage': {
+          // Assassin dives (Shadow Strike) only on isolated or low targets, not into a whole team.
+          const guards = w.heroList.filter((e) => !e.dead && e.team === target.team && e !== target && dist(e, target) < 550).length;
+          const safe = def.id !== 'shadow_strike' || tPct < 0.4 || guards === 0;
+          if (safe && d <= def.range + 60 && d > 120 && (tPct < 0.6 || hpPct > 0.55) && !w.isProtected(target)) aim = lead;
           break;
+        }
         case 'self':
           if (d <= Math.max(def.range, 450)) aim = { x: target.x, y: target.y };
           break;

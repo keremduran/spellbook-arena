@@ -48,6 +48,8 @@ export interface AbilityDef {
 }
 
 const n = (x: number) => Math.round(x);
+/** Spellveil recharge: 10s at level 1, down 0.3s per level, shortened by rarity/rank. Never under 3s. */
+export const veilCooldown = (level: number, m: number) => Math.max(3, (10 - 0.3 * (level - 1)) / Math.sqrt(m));
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
 const clampAim = (u: Unit, aim: Vec, range: number): Vec => {
@@ -123,11 +125,11 @@ const BASICS: AbilityDef[] = [
     id: 'bramble', name: 'Bramble Field', icon: '🌿', color: '#66bb6a', kind: 'basic', tags: ['area', 'slow'],
     cooldown: 9, range: 620, ai: 'damage',
     windup: 0.25, tele: { shape: 'circle', radius: 190 },
-    short: (p, m) => `${n(30 * p)}/s · slow · 4s`,
-    desc: (p) => `Grow thorns for 4s that deal ${n(30 * p)} damage per second and slow enemies by 30%.`,
+    short: (p, m) => `${n(26 * p)}/s · slow · 4s`,
+    desc: (p) => `Grow thorns for 4s that deal ${n(26 * p)} damage per second and slow enemies by 30%.`,
     cast: (w, u, c) => {
       const t = clampAim(u, c.aim, 620);
-      w.zone({ owner: u, x: t.x, y: t.y, radius: 190, duration: 4, dps: 30 * c.p, slowPct: 0.3, color: '#66bb6a' });
+      w.zone({ owner: u, x: t.x, y: t.y, radius: 190, duration: 4, dps: 26 * c.p, slowPct: 0.3, color: '#66bb6a' });
     },
   },
   {
@@ -145,10 +147,24 @@ const BASICS: AbilityDef[] = [
     id: 'blink', name: 'Blink', icon: '✴️', color: '#b388ff', kind: 'basic', tags: ['mobility'],
     cooldown: 10, range: 430, ai: 'escape',
     short: (p, m) => `teleport · ${n(10 / Math.sqrt(m))}s`,
-    desc: (_p, m) => `Teleport up to 430 units. Cooldown shortened to ${n(10 / Math.sqrt(m))}s by rarity.`,
+    desc: (_p, m) => `Teleport up to 430 units. Recast within 3s to snap back to where you started. Cooldown ${n(10 / Math.sqrt(m))}s (shorter with rarity).`,
     cast: (w, u, c) => {
+      const h = u.hero!;
+      const back = h.blinkReturn;
+      if (back && back.until > w.time) {
+        // Second cast: return to the starting point, then the real cooldown runs.
+        h.blinkReturn = undefined;
+        w.blinkTo(u, back, 99999);
+        w.cooldownOverride = 10 / Math.sqrt(c.m);
+        return;
+      }
+      const slot = (Object.keys(h.abilities) as (keyof typeof h.abilities)[]).find((s) => h.abilities[s]?.def.id === 'blink')!;
+      // Bots don't use the return; players get a 3s window to recast.
+      if (h.isPlayer) {
+        h.blinkReturn = { x: u.x, y: u.y, until: w.time + 3, slot };
+        w.cooldownOverride = 0.3;
+      } else w.cooldownOverride = 10 / Math.sqrt(c.m);
       w.blinkTo(u, c.aim, 430);
-      w.cooldownOverride = 10 / Math.sqrt(c.m);
     },
   },
   {
@@ -340,11 +356,12 @@ const BASICS: AbilityDef[] = [
     },
   },
   {
-    id: 'bulwark_stance', name: 'Bulwark Stance', icon: '🧱', color: '#a1887f', kind: 'basic', tags: ['tank', 'damage reduction', 'heal'],
+    id: 'bulwark_stance', name: 'Bulwark Stance', icon: '🧱', color: '#a1887f', kind: 'basic', tags: ['tank', 'taunt', 'damage reduction', 'heal'],
     cooldown: 12, range: 0, ai: 'heal',
-    short: (p, m) => `−${pct(Math.min(0.4, 0.22 * m))} dmg taken`,
-    desc: (_p, m) => `For 4s take ${pct(Math.min(0.4, 0.22 * m))} less damage and heal back 30% of the damage you take.`,
+    short: (p, m) => `taunt · −${pct(Math.min(0.4, 0.22 * m))} dmg taken`,
+    desc: (_p, m) => `Taunt enemy heroes within 300 for ${(1 + 0.25 * m).toFixed(1)}s (they must attack you). For 4s take ${pct(Math.min(0.4, 0.22 * m))} less damage and heal back 30% of the damage you take.`,
     cast: (w, u, c) => {
+      w.taunt(u, 300, 1 + 0.25 * c.m);
       w.addBuff(u, { id: 'bulwark_stance', duration: 4, add: { damageReduction: Math.min(0.4, 0.22 * c.m), recoup: 0.3 } });
       w.fx({ kind: 'ring', x: u.x, y: u.y, r: 70, color: '#a1887f', duration: 0.5 });
     },
@@ -408,7 +425,7 @@ const ULTS: AbilityDef[] = [
     desc: (p) => `Open a black hole for 3s that pulls enemies in and deals ${n(60 * p)} damage per second.`,
     cast: (w, u, c) => {
       const t = clampAim(u, c.aim, 650);
-      w.zone({ owner: u, x: t.x, y: t.y, radius: 280, duration: 3, dps: 60 * c.p, pull: 230, slowPct: 0.2, color: '#7c4dff' });
+      w.zone({ owner: u, x: t.x, y: t.y, radius: 280, duration: 3, dps: 60 * c.p, pull: 190, slowPct: 0.2, color: '#7c4dff' });
     },
   },
   {
@@ -474,7 +491,7 @@ const ULTS: AbilityDef[] = [
     cooldown: 40, range: 600, ai: 'engage',
     windup: 0.3, tele: { shape: 'target', heroOnly: true },
     short: (p, m) => `${n(220 * p)} · ×2 on low hp`,
-    desc: (p) => `Teleport behind the enemy hero nearest your aim and strike for ${n(220 * p)} damage. Double damage to targets under 30% health.`,
+    desc: (p) => `Teleport behind the enemy hero nearest your aim and strike for ${n(220 * p)} damage. Double damage to targets under 30% health. Then take 35% less damage and move 30% faster for 1.5s.`,
     cast: (w, u, c) => {
       const t = w.nearestEnemyTo(u.team, c.aim, 600, u, true);
       if (!t) return false;
@@ -485,6 +502,8 @@ const ULTS: AbilityDef[] = [
       w.moveUnit(u, t.x + (dx / d) * (t.radius + u.radius + 5), t.y + (dy / d) * (t.radius + u.radius + 5));
       const execute = t.hp / t.stats.maxHp < 0.3 ? 2 : 1;
       w.damage(u, t, 220 * c.p * execute, 'spell');
+      // Get out alive: brief toughness and speed after the strike.
+      w.addBuff(u, { id: 'shadow_strike', duration: 1.5, add: { damageReduction: 0.35 }, mul: { moveSpeed: 0.3 } });
     },
   },
   {
@@ -526,6 +545,13 @@ const ULTS: AbilityDef[] = [
 // ---------------------------------------------------------------- passives (P)
 
 const PASSIVES: AbilityDef[] = [
+  {
+    id: 'spellveil', name: 'Spellveil', icon: '🔮', color: '#ce93d8', kind: 'passive', tags: ['spell shield', 'assassin'], cooldown: 0, range: 0,
+    short: (_p, m) => `block a spell / ${veilCooldown(1, m).toFixed(0)}s`,
+    desc: (_p, m) =>
+      `A veil blocks the next enemy spell completely, however big, and clears burns and lingering zones for a moment. ` +
+      `Recharges in ${veilCooldown(1, m).toFixed(1)}s, faster every level (${veilCooldown(21, m).toFixed(1)}s at level 21).`,
+  },
   {
     id: 'bloodthirst', name: 'Bloodthirst', icon: '🧛', color: '#c62828', kind: 'passive', tags: ['lifesteal'], cooldown: 0, range: 0,
     short: (p, m) => `${pct(0.12 * m)} lifesteal`,
@@ -577,9 +603,9 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'thornmail', name: 'Thorns', icon: '🌵', color: '#7cb342', kind: 'passive', tags: ['tank', 'thorns', 'health'], cooldown: 0, range: 0,
-    short: (p, m) => `reflect ${pct(0.275 * m)}`,
-    desc: (_p, m) => `Reflect ${pct(0.275 * m)} of damage taken back to the attacker. +11% max health.`,
-    mods: (m) => ({ add: { thorns: 0.275 * m }, mul: { maxHp: 0.11 } }),
+    short: (p, m) => `reflect ${pct(0.22 * m)}`,
+    desc: (_p, m) => `Reflect ${pct(0.22 * m)} of damage taken back to the attacker. +11% max health.`,
+    mods: (m) => ({ add: { thorns: 0.22 * m }, mul: { maxHp: 0.11 } }),
   },
   {
     id: 'executioner', name: 'Executioner', icon: '🪓', color: '#b71c1c', kind: 'passive', tags: ['execute'], cooldown: 0, range: 0,
@@ -589,8 +615,8 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'shroud', name: "Assassin's Shroud", icon: '🌫️', color: '#9e9e9e', kind: 'passive', tags: ['invisibility'], cooldown: 0, range: 0,
-    short: (p, m) => `vanish out of combat`,
-    desc: (_p, m) => `After ${(4.5 / m).toFixed(1)}s out of combat you become invisible until you attack or cast.`,
+    short: (p, m) => `vanish · ambush +${pct(0.8 * m)}`,
+    desc: (_p, m) => `After ${(4.5 / m).toFixed(1)}s out of combat you become invisible until you attack or cast. Your first attack from invisibility deals +${pct(0.8 * m)} damage and slows by 40%.`,
     onTick: (w, u, _dt, m) => {
       if (u.hero && w.time - u.hero.lastCombatAt > 4.5 / m) u.stealthUntil = Math.max(u.stealthUntil, w.time + 0.2);
     },

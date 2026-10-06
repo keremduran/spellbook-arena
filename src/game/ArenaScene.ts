@@ -456,10 +456,11 @@ export class ArenaScene extends Phaser.Scene {
     if (me === undefined || (e.srcId !== me && e.tgtId !== me)) return;
     if (this.floats.length > 40) return;
     const amount = Math.round(e.amount);
-    if (amount < 1) return;
-    const color = e.heal ? '#69f0ae' : e.tgtId === me ? '#ff6e6e' : e.crit ? '#ffca28' : '#ffffff';
+    if (amount < 1 && !e.blocked) return;
+    const color = e.blocked ? '#e1bee7' : e.heal ? '#69f0ae' : e.tgtId === me ? '#ff6e6e' : e.crit ? '#ffca28' : '#ffffff';
+    const label = e.blocked ? 'Blocked!' : e.heal ? `+${amount}` : `${amount}${e.crit ? '!' : ''}`;
     const text = this.add
-      .text(e.x + (Math.random() - 0.5) * 30, e.y, e.heal ? `+${amount}` : `${amount}${e.crit ? '!' : ''}`, {
+      .text(e.x + (Math.random() - 0.5) * 30, e.y, label, {
         fontSize: e.crit ? '26px' : '20px', fontFamily: 'Inter, system-ui, sans-serif', fontStyle: 'bold', color, stroke: '#000', strokeThickness: 4,
       })
       .setOrigin(0.5)

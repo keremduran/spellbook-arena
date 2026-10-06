@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ABILITIES, BASIC_POOL, PASSIVE_POOL, ULT_POOL } from '../src/sim/abilities';
 import { STEP } from '../src/sim/constants';
 import { botPicks, buildBotRoster, buildRoster, rollDraft } from '../src/sim/draft';
-import { BOONS, EFFECT_BOONS } from '../src/sim/boons';
+import { BOONS, EFFECT_BOONS, upgradeBoon } from '../src/sim/boons';
 import { HEROES } from '../src/sim/heroes';
 import { Rng } from '../src/sim/rng';
 import { SLOTS, type Rarity, type Unit } from '../src/sim/types';
@@ -366,7 +366,8 @@ describe('damage meters', () => {
   it('counts damage dealt to enemy heroes and damage taken from anything', () => {
     const w = new World({ boonEveryLevels: 0, seed: 51 });
     const me = w.addHero({ def: HEROES[0], team: 'blue', name: 'me', isPlayer: true, picks: {} });
-    const foe = w.addHero({ def: HEROES[1], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    // A ranged foe: melee heroes have built-in damage reduction.
+    const foe = w.addHero({ def: HEROES[4], team: 'red', name: 'foe', isPlayer: true, picks: {} });
     w.damage(me, foe, 100, 'true');
     w.shield(foe, 50, 5);
     w.damage(me, foe, 80, 'true'); // shield soaks 50, still counts as damage landed
@@ -433,14 +434,26 @@ describe('blink', () => {
     expect(me.x).toBeCloseTo(1600, 0);
   });
 
-  it('cooldown shortens with rarity and does not leak into the next cast', () => {
+  it('recast within 3s returns to the start, then the rarity cooldown runs and does not leak', () => {
     const { w, me, foe } = setup('legendary');
     w.castAbility(me, 'Q', { x: 1500, y: 600 });
+    expect(me.x).toBeCloseTo(1500, 0);
     const q = me.hero!.abilities.Q!;
+    expect(q.readyAt - w.time).toBeCloseTo(0.3, 2);
+    for (let i = 0; i < 12; i++) w.update(1 / 30);
+    w.castAbility(me, 'Q', { x: 0, y: 0 });
+    expect(me.x).toBeCloseTo(1800, 0);
     expect(q.readyAt - w.time).toBeCloseTo(10 / Math.sqrt(2.5), 1);
     w.castAbility(me, 'W', { x: foe.x, y: foe.y });
-    const wInst = me.hero!.abilities.W!;
-    expect(wInst.readyAt - w.time).toBeCloseTo(11 * (1 - me.stats.cdr), 1);
+    expect(me.hero!.abilities.W!.readyAt - w.time).toBeCloseTo(11 * (1 - me.stats.cdr), 1);
+  });
+
+  it('without a recast the full cooldown starts when the window closes', () => {
+    const { w, me } = setup();
+    w.castAbility(me, 'Q', { x: 1500, y: 600 });
+    for (let i = 0; i < 100; i++) w.update(1 / 30);
+    expect(me.hero!.blinkReturn).toBeUndefined();
+    expect(me.hero!.abilities.Q!.readyAt).toBeGreaterThan(w.time + 5);
   });
 
   it('a quick tap with the joystick centred blinks in place (wasted)', async () => {
@@ -471,5 +484,56 @@ describe('blink', () => {
     for (let i = 0; i < 30; i++) w.update(1 / 30);
     expect(me.x).toBeGreaterThan(1880);
     expect(me.x).toBeLessThan(1920);
+  });
+});
+
+describe('v5 mechanics', () => {
+  const pick = (id: string, rarity: Rarity = 'common') => ({ def: ABILITIES.find((a) => a.id === id)!, rarity });
+
+  it('spellveil blocks one spell of any size, then recharges', () => {
+    const w = new World({ boonEveryLevels: 0, seed: 9 });
+    const me = w.addHero({ def: HEROES[3], team: 'blue', name: 'me', isPlayer: true, picks: { P: pick('spellveil') } });
+    const foe = w.addHero({ def: HEROES[5], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    const hp = me.hp;
+    expect(w.damage(foe, me, 2000, 'spell')).toBe(0);
+    expect(me.hp).toBe(hp);
+    for (let i = 0; i < 30; i++) w.update(1 / 30);
+    expect(w.damage(foe, me, 50, 'spell')).toBeGreaterThan(0);
+    expect(w.damage(foe, me, 50, 'attack')).toBeGreaterThan(0);
+  });
+
+  it('a rank-up boon raises the rank: more damage, shorter cooldown', () => {
+    const w = new World({ boonEveryLevels: 0, seed: 10 });
+    const me = w.addHero({ def: HEROES[5], team: 'blue', name: 'me', isPlayer: true, picks: { Q: pick('firebolt') } });
+    const q = me.hero!.abilities.Q!;
+    const before = w.instPower(me, q);
+    me.hero!.offers.push([{ def: upgradeBoon('Q', q), rarity: 'common' }]);
+    w.pickBoon(me, 0);
+    expect(q.rank).toBe(2);
+    expect(w.instPower(me, q)).toBeCloseTo(before * 1.3, 5);
+  });
+
+  it('bulwark stance taunts nearby enemy heroes into attacking you', () => {
+    const w = new World({ boonEveryLevels: 0, seed: 11 });
+    const me = w.addHero({ def: HEROES[0], team: 'blue', name: 'me', isPlayer: true, picks: { Q: pick('bulwark_stance') } });
+    const foe = w.addHero({ def: HEROES[4], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    me.x = 1800; me.y = 600; foe.x = 2000; foe.y = 600;
+    w.castAbility(me, 'Q', me);
+    expect(foe.tauntedBy).toBe(me.id);
+    w.update(1 / 30);
+    expect(foe.order).toEqual({ kind: 'attack', id: me.id });
+  });
+
+  it('towers answer a call for help: they switch to a hero hitting an ally under them', () => {
+    const w = new World({ boonEveryLevels: 0, seed: 12 });
+    const tower = w.units.find((u) => u.kind === 'tower' && u.team === 'blue')!;
+    const ally = w.addHero({ def: HEROES[4], team: 'blue', name: 'ally', isPlayer: true, picks: {} });
+    const foe = w.addHero({ def: HEROES[4], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    ally.x = tower.x + 100; ally.y = tower.y;
+    foe.x = tower.x + 450; foe.y = tower.y;
+    w.damage(foe, ally, 10, 'attack');
+    tower.attackCd = 0;
+    w.update(1 / 30);
+    expect(tower.structure!.targetId).toBe(foe.id);
   });
 });

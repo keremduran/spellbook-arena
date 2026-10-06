@@ -2,7 +2,7 @@ import { aimsAtPoint, autoAim } from '../game/aim';
 import { sfx } from '../game/audio';
 import { heroImg } from '../game/heroIcons';
 import { MAP_H, MAP_W, MAX_LEVEL, xpToNext } from '../sim/constants';
-import { RARITIES, SLOTS, type BoonInst, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
+import { RARITIES, ROMAN, SLOTS, rankCooldown, type BoonInst, type GameEvent, type Slot, type Team, type Unit } from '../sim/types';
 import type { World } from '../sim/world';
 import { spellCard } from './cards';
 import { clear, el } from './dom';
@@ -21,7 +21,7 @@ export class Hud {
   private xpFill = el('i');
   private lvl = el('span.lvl');
   private statline = el('div.statline');
-  private slots = {} as Record<Slot, { btn: HTMLElement; cd: HTMLElement }>;
+  private slots = {} as Record<Slot, { btn: HTMLElement; cd: HTMLElement; rank: HTMLElement }>;
   private boons = el('div.boons.hidden');
   private death = el('div.death.hidden');
   private scoreTable = el('div');
@@ -45,8 +45,10 @@ export class Hud {
         style: `--rc:${inst ? RARITIES[inst.rarity].color : '#555'}`,
         title: inst ? `${inst.def.name} (${RARITIES[inst.rarity].label})\n${inst.def.desc(world.power(player, inst.rarity), RARITIES[inst.rarity].mult)}` : '',
       }, [el('span.key', { text: slot }), inst?.def.icon ?? '', cd]);
+      const rank = el('span.rank');
+      btn.append(rank);
       if (slot !== 'P' && inst) this.bindAimButton(btn, slot);
-      this.slots[slot] = { btn, cd };
+      this.slots[slot] = { btn, cd, rank };
       return btn;
     });
     // Big attack button for touch: target the nearest enemy, heroes first.
@@ -202,9 +204,13 @@ export class Hud {
     const u0 = this.player;
     for (const slot of SLOTS) {
       const inst = u0.hero!.abilities[slot];
+      if (inst) {
+        const label = inst.rank > 1 ? ROMAN[inst.rank] : '';
+        if (this.slots[slot].rank.textContent !== label) this.slots[slot].rank.textContent = label;
+      }
       if (!inst || slot === 'P') continue;
       const left = inst.readyAt - this.world.time;
-      const total = Math.max(0.1, inst.def.cooldown * (1 - u0.stats.cdr));
+      const total = Math.max(0.1, inst.def.cooldown * rankCooldown(inst.rank) * (1 - u0.stats.cdr));
       const { btn, cd } = this.slots[slot];
       const cooling = left > 0 || u0.dead;
       cd.classList.toggle('hidden', !cooling);
@@ -421,7 +427,7 @@ export function boonCards(offer: BoonInst[], onPick: (i: number) => void, previe
     const lines = preview ? preview(b) : [];
     return spellCard({
       icon: b.def.icon, name: b.def.name, line: b.def.short(r.mult), rarity: b.rarity,
-      corner: effect ? '✦' : '+', note: lines.length ? shortPreview(lines) : undefined,
+      corner: b.def.kind === 'upgrade' ? `⬆ ${b.def.slot}` : effect ? '✦' : '+', note: b.def.kind === 'upgrade' ? lines[1] : lines.length ? shortPreview(lines) : undefined,
       title: [b.def.desc(r.mult), ...lines].join('\n'), hotkey: String(i + 1), onClick: () => onPick(i),
     });
   }));

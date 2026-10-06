@@ -72,7 +72,18 @@ export interface AbilityInst {
   def: AbilityDef;
   rarity: Rarity;
   readyAt: number;
+  /** 1..MAX_RANK, raised by rank-up boons (Hades-style): more power, shorter cooldown. */
+  rank: number;
 }
+
+export const MAX_RANK = 5;
+/** Damage/healing multiplier from rank: +30% per rank above I. */
+export const rankPower = (rank: number) => 1 + 0.3 * (rank - 1);
+/** Multiplier on rarity effects (durations, percentages): +15% per rank. */
+export const rankMult = (rank: number) => 1 + 0.15 * (rank - 1);
+/** Cooldown multiplier: −7% per rank. */
+export const rankCooldown = (rank: number) => 1 - 0.07 * (rank - 1);
+export const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
 
 export interface BoonInst {
   def: BoonDef;
@@ -118,6 +129,11 @@ export interface HeroState {
   dmgBuildings: number;
   /** Damage to every enemy: heroes, minions and buildings. */
   dmgTotal: number;
+  /** Blink (LeBlanc style): recast before `until` to return here. */
+  blinkReturn?: { x: number; y: number; until: number; slot: Slot };
+  /** Spellveil passive: ready at this time; spells are ignored until veilImmuneUntil after a block. */
+  veilReadyAt?: number;
+  veilImmuneUntil?: number;
   /** Spellshield can trigger again at this time. */
   nextSpellshield?: number;
   /** Kills since last death, and multi-kill tracking. */
@@ -175,6 +191,11 @@ export interface Unit {
   damagedBy: Map<number, number>;
   /** Last time this unit hit an enemy hero (tower aggro). */
   lastHitHeroAt: number;
+  /** Taunted: must attack this unit until tauntUntil (tank skills). */
+  tauntedBy?: number;
+  tauntUntil?: number;
+  /** The enemy hero this unit last damaged (tower call-for-help). */
+  lastHitHeroId?: number;
   dash?: Dash;
   /** Forced movement (hook pulls, knockbacks); moves even while stunned. */
   slide?: { vx: number; vy: number; until: number };
@@ -275,7 +296,7 @@ export interface Fx {
 }
 
 export type GameEvent =
-  | { type: 'damage'; x: number; y: number; amount: number; crit: boolean; srcId: number; tgtId: number; heal?: boolean }
+  | { type: 'damage'; x: number; y: number; amount: number; crit: boolean; srcId: number; tgtId: number; heal?: boolean; blocked?: boolean }
   | { type: 'kill'; killer?: string; killerTeam?: Team; victim: string; victimTeam: Team; killerId?: number; victimId: number }
   | { type: 'levelup'; unitId: number; level: number }
   | { type: 'offer'; unitId: number }
@@ -283,7 +304,7 @@ export type GameEvent =
   | { type: 'end'; winner: Team }
   /** Presentation-only events (sound and particles). */
   | { type: 'cast'; unitId: number; abilityId: string; kind: 'basic' | 'ult' | 'passive'; tags: string[]; color: string; x: number; y: number }
-  | { type: 'attack'; unitId: number; x: number; y: number; tx: number; ty: number; ranged: boolean; tower: boolean; tgtId: number }
+  | { type: 'attack'; unitId: number; x: number; y: number; tx: number; ty: number; ranged: boolean; tower: boolean; tgtId: number; heavy?: boolean }
   | { type: 'die'; unitId: number; kind: UnitKind; team: Team; x: number; y: number; r: number }
   | { type: 'boom'; x: number; y: number; r: number; color: string }
   | { type: 'rune'; unitId: number; x: number; y: number }

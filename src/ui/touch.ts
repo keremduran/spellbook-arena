@@ -31,7 +31,9 @@ export function createJoystick(parent: HTMLElement, player: Unit) {
     if (e.pointerId !== active) return;
     active = null;
     knob.style.transform = '';
-    player.hero!.moveDir = null;
+    const h = player.hero!;
+    if (h.moveDir) h.lastMoveDir = { dir: h.moveDir, at: performance.now() };
+    h.moveDir = null;
   };
 
   pad.addEventListener('pointerdown', (e) => {

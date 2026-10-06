@@ -126,6 +126,8 @@ export interface HeroState {
   multiAt: number;
   /** Joystick direction for touch controls; overrides orders while set. */
   moveDir: Vec | null;
+  /** Last joystick direction and when it was let go (ms, page clock), for escapes cast just after. */
+  lastMoveDir?: { dir: Vec; at: number };
   retreating: boolean;
   nextThink: number;
   laneOffset: number;

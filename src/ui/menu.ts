@@ -1,6 +1,7 @@
 import { el } from './dom';
+import { musicPicker } from './musicPicker';
 
-export const VERSION = 'v4.4 · joystick-only touch, blink fixes';
+export const VERSION = 'v4.5 · pick your music';
 
 export interface Settings {
   mode: 'play' | 'manage';
@@ -79,6 +80,7 @@ export function renderMenu(root: HTMLElement, onPlay: (s: Settings) => void) {
           el('label', { text: 'Team size' }),
           seg<number>([[1, '1v1'], [3, '3v3'], [5, '5v5']], s.teamSize, (v) => (s.teamSize = v)),
         ]),
+        el('div.setting', {}, [el('label', { text: 'Music (tap to hear)' }), musicPicker()]),
         el('div.setting', {}, [
           el('label', { text: 'Boons' }),
           seg<number>([[2, 'Every 2 levels'], [3, 'Every 3 levels'], [4, 'Every 4 levels'], [0, 'Off']], s.boonEveryLevels, (v) => (s.boonEveryLevels = v)),

@@ -9,7 +9,7 @@ export type SfxName =
   | 'death' | 'kill' | 'allyDown' | 'levelUp' | 'boon' | 'structure' | 'structureWin' | 'structureLoss' | 'click' | 'victory' | 'defeat'
   | 'announce' | 'announceBad' | 'rune' | 'runeBad';
 
-import { startMusic } from './music';
+import { startMusic, MUSIC_STYLES, type MusicStyle } from './music';
 
 const PREFS_KEY = 'spellbook-audio';
 
@@ -35,12 +35,16 @@ export class Sfx {
   private music: { stop: () => void } | null = null;
   sfxOn = true;
   musicOn = true;
+  style: MusicStyle = 'arcade';
+  /** 0 calm, 1 skirmish, 2 teamfight; set by the game, read by the music each beat. */
+  private intensity = 0;
 
   constructor() {
     try {
       const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}');
       if (typeof p.sfx === 'boolean') this.sfxOn = p.sfx;
       if (typeof p.music === 'boolean') this.musicOn = p.music;
+      if (MUSIC_STYLES.some((m) => m.id === p.style)) this.style = p.style;
     } catch {
       // storage blocked; keep defaults
     }
@@ -75,7 +79,7 @@ export class Sfx {
 
   private save() {
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify({ sfx: this.sfxOn, music: this.musicOn }));
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ sfx: this.sfxOn, music: this.musicOn, style: this.style }));
     } catch {
       // ignore
     }
@@ -312,13 +316,29 @@ export class Sfx {
   /** Background music (see music.ts); follows the mood at the next 8-bar section. */
   startMusic() {
     if (!this.ctx || this.music) return;
-    this.music = startMusic(this.ctx, this.musicBus, () => this.mood);
+    this.music = startMusic(this.ctx, this.musicBus, { style: this.style, mood: () => this.mood, intensity: () => this.intensity });
+  }
+
+  setIntensity(level: number) {
+    this.intensity = level;
+  }
+
+  /** Switch music style (restarts the music if it's playing) and remember it. */
+  setStyle(style: MusicStyle) {
+    this.style = style;
+    this.save();
+    if (this.music) {
+      this.music.stop();
+      this.music = null;
+      if (this.musicOn) this.startMusic();
+    }
   }
 
   stopMusic() {
     this.music?.stop();
     this.music = null;
     this.mood = 'major';
+    this.intensity = 0;
   }
 
   /** Debug/test hook: a stream of everything this plays, for recording. */

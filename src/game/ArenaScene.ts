@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { FOUNTAIN, LANE_Y, MAP_H, MAP_W, STEP, laneDir } from '../sim/constants';
 import type { GameEvent, Slot, Unit, Vec } from '../sim/types';
 import type { World } from '../sim/world';
+import { sfx } from './audio';
 import { heroIconBase64 } from './heroIcons';
 import { hex, TEAM_COLOR, Visuals } from './visuals';
 const KEY_SLOTS: Record<string, Slot> = { q: 'Q', w: 'W', e: 'E', r: 'R' };
@@ -169,6 +170,24 @@ export class ArenaScene extends Phaser.Scene {
     this.aim = slot && dir ? { slot, dir } : null;
   }
 
+  private musicTimer = 0;
+
+  /**
+   * How hot the action is around the camera, for the music: 2 = you're fighting or 2+ enemy
+   * heroes are close, 1 = an enemy hero or a fight is nearby, 0 = calm.
+   */
+  private combatIntensity(x: number, y: number): number {
+    const w = this.world;
+    const me = this.player;
+    const team = me?.team ?? 'blue';
+    const near = (r: number) => w.heroList.filter((h) => !h.dead && h.team !== team && Math.hypot(h.x - x, h.y - y) < r).length;
+    const fighting = w.heroList.some((h) => !h.dead && w.time - h.hero!.lastCombatAt < 2 && w.time - h.lastHitHeroAt < 2 && Math.hypot(h.x - x, h.y - y) < 900);
+    if (me && !me.dead && w.time - me.lastHitHeroAt < 3) return 2;
+    if (near(900) >= 2 || (fighting && near(1100) >= 1)) return 2;
+    if (near(1300) >= 1 || fighting) return 1;
+    return 0;
+  }
+
   /** While the player is dead: the ally being watched. */
   private watchId?: number;
 
@@ -247,6 +266,11 @@ export class ArenaScene extends Phaser.Scene {
     const cx = cam.midPoint.x + (focus.x - cam.midPoint.x) * Math.min(1, dt * 8);
     const cy = cam.midPoint.y + (focus.y - cam.midPoint.y) * Math.min(1, dt * 8);
     cam.centerOn(cx, cy);
+    this.musicTimer -= dt;
+    if (this.musicTimer <= 0) {
+      this.musicTimer = 0.5;
+      sfx.setIntensity(this.combatIntensity(cx, cy));
+    }
     this.render();
     this.hooks.onFrame(dt);
   }

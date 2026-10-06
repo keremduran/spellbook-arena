@@ -11,6 +11,7 @@ import { el } from './ui/dom';
 import { showDraft } from './ui/draftScreen';
 import { Hud, damageTable } from './ui/hud';
 import { ManagerHud } from './ui/managerHud';
+import { musicPicker } from './ui/musicPicker';
 import { renderMenu, type Settings } from './ui/menu';
 import { createJoystick, isTouchDevice } from './ui/touch';
 
@@ -20,6 +21,8 @@ if (isTouchDevice()) document.body.classList.add('touch');
 
 // Audio can only start after a user gesture; UI buttons get a soft click.
 document.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
+// Exposed for automated audio checks.
+(window as unknown as { __sfx: unknown }).__sfx = sfx;
 ui.addEventListener('click', (e) => {
   if ((e.target as HTMLElement).closest('button')) sfx.play('click', 0.5);
 });
@@ -122,6 +125,7 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
       pauseBox = el('div.screen.overlay', {}, [
         el('div.pausebox.panel', {}, [
           el('h2.title', { text: 'Paused', style: 'font-size:40px;margin-bottom:18px' }),
+          el('div', { style: 'margin-bottom:16px' }, [musicPicker(false)]),
           el('div', { style: 'display:flex;gap:10px;justify-content:center' }, [
             el('button.btn-primary', { onclick: togglePause }, ['Resume']),
             el('button.btn-ghost', { onclick: () => { paused = false; pauseBox?.remove(); teardown(); menu(); } }, ['Quit']),

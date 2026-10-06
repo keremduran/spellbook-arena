@@ -11,6 +11,9 @@ export function autoAim(w: World, u: Unit, def: AbilityDef): Vec {
     // Escapes go where the joystick points. With no joystick input, go away from the nearest
     // enemy hero rather than along `facing` (which points at whatever you last attacked).
     if (u.hero?.moveDir) return ahead;
+    // Joystick just let go (e.g. thumb lifted a moment before the tap): still use its direction.
+    const last = u.hero?.lastMoveDir;
+    if (last && performance.now() - last.at < 1500) return { x: u.x + last.dir.x * range, y: u.y + last.dir.y * range };
     const threat = w.nearestEnemyTo(u.team, u, 900, u, true);
     if (threat) {
       const dx = u.x - threat.x;

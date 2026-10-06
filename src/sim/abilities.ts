@@ -180,10 +180,10 @@ const BASICS: AbilityDef[] = [
   {
     id: 'frenzy', name: 'Frenzy', icon: '😤', color: '#ef5350', kind: 'basic', tags: ['attack speed'],
     cooldown: 11, range: 0, ai: 'self',
-    short: (p, m) => `+${pct(0.5 * m)} atk speed`,
-    desc: (_p, m) => `Gain ${pct(0.5 * m)} attack speed for 4s.`,
+    short: (p, m) => `+${pct(1.0 * m)} atk speed`,
+    desc: (_p, m) => `Gain ${pct(1.0 * m)} attack speed for 4s.`,
     cast: (w, u, c) => {
-      w.addBuff(u, { id: 'frenzy', duration: 4, mul: { attackSpeed: 0.5 * c.m } });
+      w.addBuff(u, { id: 'frenzy', duration: 4, mul: { attackSpeed: 1.0 * c.m } });
     },
   },
   {
@@ -346,11 +346,11 @@ const BASICS: AbilityDef[] = [
   {
     id: 'battle_cry', name: 'Battle Cry', icon: '📯', color: '#ffd54f', kind: 'basic', tags: ['support', 'attack speed', 'movement speed'],
     cooldown: 14, range: 500, ai: 'self',
-    short: (p, m) => `team +${pct(0.25 * m)} atk speed`,
-    desc: (_p, m) => `You and nearby allied heroes gain ${pct(0.25 * m)} attack speed and ${pct(0.15 * m)} move speed for 4s.`,
+    short: (p, m) => `team +${pct(0.5 * m)} atk speed`,
+    desc: (_p, m) => `You and nearby allied heroes gain ${pct(0.5 * m)} attack speed and ${pct(0.15 * m)} move speed for 4s.`,
     cast: (w, u, c) => {
       for (const a of w.alliesNear(u.team, u.x, u.y, 500, true)) {
-        w.addBuff(a, { id: 'battle_cry', duration: 4, mul: { attackSpeed: 0.25 * c.m, moveSpeed: 0.15 * c.m } });
+        w.addBuff(a, { id: 'battle_cry', duration: 4, mul: { attackSpeed: 0.5 * c.m, moveSpeed: 0.15 * c.m } });
       }
       w.fx({ kind: 'ring', x: u.x, y: u.y, r: 500, color: '#ffd54f', duration: 0.5 });
     },
@@ -411,9 +411,9 @@ const ULTS: AbilityDef[] = [
     id: 'avatar', name: 'Avatar', icon: '🗿', color: '#ffcc80', kind: 'ult', tags: ['tank', 'buff', 'attack speed', 'size'],
     cooldown: 60, range: 0, ai: 'self',
     short: (p, m) => `giant · +${pct(0.45 * m)} power`,
-    desc: (p, m) => `Grow huge for 10s: +${pct(0.45 * m)} attack damage and attack speed, +35% max health, 15% lifesteal, and heal ${n(275 * p)}.`,
+    desc: (p, m) => `Grow huge for 10s: +${pct(0.45 * m)} attack damage, +${pct(0.9 * m)} attack speed, +35% max health, 15% lifesteal, and heal ${n(275 * p)}.`,
     cast: (w, u, c) => {
-      w.addBuff(u, { id: 'avatar', duration: 10, mul: { ad: 0.45 * c.m, attackSpeed: 0.45 * c.m, maxHp: 0.35 }, add: { size: 0.35, lifesteal: 0.15 } });
+      w.addBuff(u, { id: 'avatar', duration: 10, mul: { ad: 0.45 * c.m, attackSpeed: 0.9 * c.m, maxHp: 0.35 }, add: { size: 0.35, lifesteal: 0.15 } });
       w.heal(u, 275 * c.p);
     },
   },
@@ -560,9 +560,9 @@ const PASSIVES: AbilityDef[] = [
   },
   {
     id: 'berserk', name: 'Berserk', icon: '😡', color: '#e53935', kind: 'passive', tags: ['attack speed'], cooldown: 0, range: 0,
-    short: (p, m) => `+${pct(0.35 * m)} atk speed`,
-    desc: (_p, m) => `+${pct(0.35 * m)} attack speed.`,
-    mods: (m) => ({ mul: { attackSpeed: 0.35 * m } }),
+    short: (p, m) => `+${pct(0.7 * m)} atk speed`,
+    desc: (_p, m) => `+${pct(0.7 * m)} attack speed.`,
+    mods: (m) => ({ mul: { attackSpeed: 0.7 * m } }),
   },
   {
     id: 'fleetfoot', name: 'Fleetfoot', icon: '🦌', color: '#4dd0e1', kind: 'passive', tags: ['movement speed'], cooldown: 0, range: 0,
@@ -644,8 +644,8 @@ const PASSIVES: AbilityDef[] = [
   {
     id: 'last_stand', name: 'Last Stand', icon: '🩹', color: '#ef9a9a', kind: 'passive', tags: ['tank', 'damage reduction', 'attack speed'], cooldown: 0, range: 0,
     short: (p, m) => `low hp: −32% dmg`,
-    desc: (_p, m) => `Below 37% health, take 32% less damage and gain ${pct(0.35 * m)} attack speed.`,
-    dynamicMods: (u, m) => (u.hp / u.stats.maxHp < 0.375 ? { add: { damageReduction: 0.325 }, mul: { attackSpeed: 0.35 * m } } : null),
+    desc: (_p, m) => `Below 37% health, take 32% less damage and gain ${pct(0.7 * m)} attack speed.`,
+    dynamicMods: (u, m) => (u.hp / u.stats.maxHp < 0.375 ? { add: { damageReduction: 0.325 }, mul: { attackSpeed: 0.7 * m } } : null),
   },
   {
     id: 'arcane_echo', name: 'Arcane Echo', icon: '🔁', color: '#b39ddb', kind: 'passive', tags: ['cooldowns'], cooldown: 0, range: 0,

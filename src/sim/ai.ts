@@ -72,6 +72,8 @@ function abilityPlan(w: World, u: Unit, mode: 'fight' | 'retreat', target?: Unit
 
 /** Chance per think (~4 per second) that a bot reacts to a ground warning it stands in. */
 const DODGE_CHANCE = 0.35;
+/** Chance per think that a bot walks out of an enemy damage zone it stands in. */
+const HAZARD_CHANCE = 0.6;
 
 const FIGHT_RANGE = { auto: 750, push: 380, farm: 450, group: 900, retreat: 0 };
 
@@ -99,6 +101,14 @@ export function thinkHero(w: World, u: Unit) {
   const threat = w.threatFor(u);
   if (threat && w.rng.next() < DODGE_CHANCE) {
     u.order = { kind: 'move', x: u.x + threat.away.x * 220, y: u.y + threat.away.y * 220 };
+    return;
+  }
+  // Don't stand in damaging zones or under falling meteors: walk out (they're easy to see,
+  // so bots react more often than to quick wind-ups). Still fight from the edge.
+  const hazard = w.hazardFor(u);
+  if (hazard && w.rng.next() < HAZARD_CHANCE) {
+    abilityPlan(w, u, 'fight', enemies.sort((a, b) => dist(a, u) - dist(b, u))[0]);
+    u.order = { kind: 'move', x: u.x + hazard.away.x * 260, y: u.y + hazard.away.y * 260 };
     return;
   }
 

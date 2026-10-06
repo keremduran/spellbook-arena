@@ -54,6 +54,8 @@ const STAT_PREVIEW: [keyof Stats, string, (v: number) => string, number?][] = [
 /** Extra damage taken by a hero on a kill streak: +5% per kill past 4, up to +40%. */
 export const bountyBonus = (streak: number) => Math.min(0.4, Math.max(0, streak - 4) * 0.05);
 const MINION_POWER = 1.15;
+/** Chance that picking any boon also ranks up a random skill. */
+const BONUS_RANK_CHANCE = 0.2;
 /** Built-in damage reduction for melee heroes. */
 const MELEE_DR = 0.1;
 /** Every 3rd melee hero attack is a heavy blow: bonus damage and a small cleave. */
@@ -348,6 +350,30 @@ export class World {
   }
 
   /** An enemy ground warning this unit is standing in, and the way out of it. */
+  /**
+   * Damaging ground the unit stands in: enemy zones (Bramble, Poison, Black Hole...) and
+   * novas about to land (Meteor, Inferno...). Returns the way out.
+   */
+  hazardFor(u: Unit): { away: Vec } | null {
+    const out = (x: number, y: number, r: number) => {
+      const dx = u.x - x;
+      const dy = u.y - y;
+      const d = len(dx, dy);
+      return d < r + u.radius ? { away: d > 1 ? { x: dx / d, y: dy / d } : { x: 0, y: 1 } } : null;
+    };
+    for (const z of this.zones) {
+      if (z.team === u.team || !z.dps) continue;
+      const hit = out(z.x, z.y, z.radius);
+      if (hit) return hit;
+    }
+    for (const n of this.novas) {
+      if (n.team === u.team || n.at <= this.time) continue;
+      const hit = out(n.x, n.y, n.radius);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
   threatFor(u: Unit): { tele: Telegraph; away: Vec } | null {
     for (const tg of this.telegraphs) {
       if (tg.team === u.team) continue;
@@ -817,7 +843,7 @@ export class World {
       const r = a.hero!.abilities.R;
       if (r && ef.bloodrush >= 1.8) r.readyAt = this.time + (r.readyAt - this.time) / 2;
     }
-    if (ef.momentum) this.addBuff(a, { id: 'momentum', duration: 4, mul: { moveSpeed: 0.35 * ef.momentum, attackSpeed: 0.35 * ef.momentum } });
+    if (ef.momentum) this.addBuff(a, { id: 'momentum', duration: 4, mul: { moveSpeed: 0.35 * ef.momentum, attackSpeed: 0.7 * ef.momentum } });
   }
 
   /** First blood, multi-kills, streaks and shutdowns. Returns true for a shutdown. */
@@ -878,6 +904,15 @@ export class World {
       if (inst) inst.rank = Math.min(MAX_RANK, inst.rank + upgradeRanks(chosen.rarity));
       if (h.isPlayer) this.events.push({ type: 'announce', text: `${inst?.def.name ?? 'Ability'} ${ROMAN[inst?.rank ?? 1]}`, sub: 'Rank up!', team: u.team, unitId: u.id });
     }
+    // Bonus roll on top of the offer: sometimes a random skill ranks up for free.
+    if (this.rng.next() < BONUS_RANK_CHANCE) {
+      const open = (Object.values(h.abilities) as AbilityInst[]).filter((a) => a.rank < MAX_RANK);
+      if (open.length) {
+        const lucky = this.rng.pick(open);
+        lucky.rank++;
+        if (h.isPlayer) this.events.push({ type: 'announce', text: `${lucky.def.name} ${ROMAN[lucky.rank]}`, sub: 'Lucky rank-up!', team: u.team, unitId: u.id });
+      }
+    }
     h.effects = {};
     for (const b of h.boons) if (b.def.effect) h.effects[b.def.effect] = (h.effects[b.def.effect] ?? 0) + RARITIES[b.rarity].mult;
     this.recompute(u);
@@ -921,6 +956,8 @@ export class World {
     const s = emptyStats();
     for (const k of STAT_KEYS) s[k] = (base[k] + add[k]) * (1 + mul[k]);
     s.cdr = Math.min(0.6, s.cdr);
+    // Attack speed boosts are big now; keep it to 3 attacks a second.
+    s.attackSpeed = Math.min(3, s.attackSpeed);
     s.damageReduction = Math.min(0.55, s.damageReduction);
     s.critChance = Math.min(1, s.critChance);
     s.moveSpeed = Math.min(650, s.moveSpeed);

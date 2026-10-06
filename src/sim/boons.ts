@@ -29,7 +29,7 @@ const pct = (x: number) => `${Math.round(x * 100)}%`;
 const n = (x: number) => Math.round(x);
 
 export const STAT_BOONS: BoonDef[] = [
-  { id: 'swift', name: 'Swift Strikes', icon: '⚡', kind: 'stat', short: (m) => `+${pct(0.12 * m)} atk speed`, desc: (m) => `+${pct(0.12 * m)} attack speed`, mods: (m) => ({ mul: { attackSpeed: 0.12 * m } }) },
+  { id: 'swift', name: 'Swift Strikes', icon: '⚡', kind: 'stat', short: (m) => `+${pct(0.24 * m)} atk speed`, desc: (m) => `+${pct(0.24 * m)} attack speed`, mods: (m) => ({ mul: { attackSpeed: 0.24 * m } }) },
   { id: 'fleet', name: 'Fleet of Foot', icon: '👟', kind: 'stat', short: (m) => `+${pct(0.07 * m)} speed`, desc: (m) => `+${pct(0.07 * m)} move speed`, mods: (m) => ({ mul: { moveSpeed: 0.07 * m } }) },
   { id: 'vitality', name: 'Vitality', icon: '❤️', kind: 'stat', short: (m) => `+${pct(0.11 * m)} health`, desc: (m) => `+${pct(0.11 * m)} max health`, mods: (m) => ({ mul: { maxHp: 0.11 * m } }) },
   { id: 'might', name: 'Might', icon: '💪', kind: 'stat', short: (m) => `+${pct(0.1 * m)} attack`, desc: (m) => `+${pct(0.1 * m)} attack damage`, mods: (m) => ({ mul: { ad: 0.1 * m } }) },
@@ -56,7 +56,7 @@ export const EFFECT_BOONS: BoonDef[] = [
   { id: 'static', effect: 'static', name: 'Static Field', icon: '⚡', kind: 'effect', short: (m) => `zap ${n(30 * m)} every 2s`, desc: (m) => `Every 2s, zap the nearest enemy for ${n(30 * m)} damage.` },
   { id: 'bloodrush', effect: 'bloodrush', name: 'Bloodrush', icon: '🩸', kind: 'effect', short: (m) => `takedowns reset spells`, desc: (m) => `Hero kills and assists refresh your basic abilities${m >= 1.8 ? ' and half your ultimate' : ''}.` },
   { id: 'detonate', effect: 'detonate', name: 'Detonate', icon: '💣', kind: 'effect', short: (m) => `kills explode`, desc: (m) => `Enemies you kill explode for ${pct(Math.min(0.5, 0.15 * m))} of their max health to nearby enemies.` },
-  { id: 'momentum', effect: 'momentum', name: 'Momentum', icon: '🌪️', kind: 'effect', short: (m) => `takedowns: rush`, desc: (m) => `Takedowns give ${pct(0.35 * m)} move speed and attack speed for 4s.` },
+  { id: 'momentum', effect: 'momentum', name: 'Momentum', icon: '🌪️', kind: 'effect', short: (m) => `takedowns: rush`, desc: (m) => `Takedowns give ${pct(0.35 * m)} move speed and ${pct(0.7 * m)} attack speed for 4s.` },
   { id: 'secondWind', effect: 'secondWind', name: 'Second Wind', icon: '🪽', kind: 'effect', short: (m) => `cheat death once`, desc: (m) => `Once per life, survive a killing blow and become untouchable for ${(1 + 0.5 * m).toFixed(1)}s.` },
   { id: 'bulwarkCast', effect: 'bulwarkCast', name: 'Spellshield', icon: '🔰', kind: 'effect', short: (m) => `casts shield ${n(55 * m)}`, desc: (m) => `Casting an ability shields you for ${n(55 * m)} for 2.5s (once every 1.5s).` },
 ];

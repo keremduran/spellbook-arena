@@ -509,8 +509,9 @@ describe('v5 mechanics', () => {
     const before = w.instPower(me, q);
     me.hero!.offers.push([{ def: upgradeBoon('Q', q), rarity: 'common' }]);
     w.pickBoon(me, 0);
-    expect(q.rank).toBe(2);
-    expect(w.instPower(me, q)).toBeCloseTo(before * 1.3, 5);
+    // At least one rank (a lucky bonus roll can add another).
+    expect(q.rank).toBeGreaterThanOrEqual(2);
+    expect(w.instPower(me, q)).toBeCloseTo(before * (1 + 0.3 * (q.rank - 1)), 5);
   });
 
   it('bulwark stance taunts nearby enemy heroes into attacking you', () => {
@@ -535,5 +536,15 @@ describe('v5 mechanics', () => {
     tower.attackCd = 0;
     w.update(1 / 30);
     expect(tower.structure!.targetId).toBe(foe.id);
+  });
+
+  it('bots walk out of enemy damage zones', () => {
+    const w = new World({ boonEveryLevels: 0, seed: 13 });
+    const bot = w.addHero({ def: HEROES[4], team: 'blue', name: 'bot', picks: {} });
+    const foe = w.addHero({ def: HEROES[5], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    bot.x = 1800; bot.y = 560; foe.x = 2600; foe.y = 560;
+    w.zone({ owner: foe, x: 1800, y: 560, radius: 190, duration: 6, dps: 30, color: '#66bb6a' });
+    for (let i = 0; i < 60; i++) w.update(1 / 30);
+    expect(Math.hypot(bot.x - 1800, bot.y - 560)).toBeGreaterThan(190);
   });
 });

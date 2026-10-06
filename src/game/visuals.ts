@@ -557,7 +557,12 @@ export class Visuals {
             this.embers.explode(14, e.x, e.y);
             this.smoke.explode(6, e.x, e.y);
             const viewTeam = me?.team ?? 'blue';
-            this.sound(e.unitId === me?.id ? 'death' : e.team === viewTeam ? 'allyDown' : 'kill', e.x, e.y, e.unitId === me?.id);
+            // Hero deaths are always audible: major motif for enemies, minor for teammates.
+            if (e.unitId === me?.id) sfx.play('death');
+            else sfx.play(e.team === viewTeam ? 'allyDown' : 'kill', Math.max(0.5, this.gainAt(e.x, e.y)));
+            // Music turns minor while your team trails by 5+ kills.
+            const other = viewTeam === 'blue' ? 'red' : 'blue';
+            sfx.setMood(w.kills[viewTeam] - w.kills[other] <= -5 ? 'minor' : 'major');
           } else if (e.kind === 'creep') {
             this.smoke.explode(3, e.x, e.y);
             this.sparks.setParticleTint(tc);
@@ -568,7 +573,8 @@ export class Visuals {
             this.embers.setParticleTint(0xffcc80);
             this.embers.explode(40, e.x, e.y - 30);
             this.smoke.explode(18, e.x, e.y);
-            sfx.play('structure', 0.9);
+            // Same fanfare either way: major when an enemy structure falls, minor when it's ours.
+            sfx.play(e.team === (me?.team ?? 'blue') ? 'structureLoss' : 'structureWin', 0.9);
             this.scene.cameras.main.shake(500, 0.012);
           }
           break;
@@ -589,10 +595,14 @@ export class Visuals {
         case 'rune':
           this.sparks.setParticleTint(0xffca28);
           this.sparks.explode(40, e.x, e.y);
-          this.sound('rune', e.x, e.y, e.unitId === me?.id);
+          {
+            const taker = w.unit(e.unitId);
+            const ours = taker?.team === (me?.team ?? 'blue');
+            this.sound(ours ? 'rune' : 'runeBad', e.x, e.y, e.unitId === me?.id);
+          }
           break;
         case 'announce':
-          sfx.play('announce', 0.8);
+          sfx.play(!e.team || e.team === (me?.team ?? 'blue') ? 'announce' : 'announceBad', 0.8);
           break;
         case 'offer':
           if (e.unitId === me?.id || !me) sfx.play('boon', me ? 1 : 0.5);

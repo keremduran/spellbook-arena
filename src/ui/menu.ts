@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v4.1 · death camera';
+export const VERSION = 'v4.2 · new music & team sounds';
 
 export interface Settings {
   mode: 'play' | 'manage';

@@ -169,7 +169,7 @@ function startMatch(settings: Settings, rng: Rng, seed: number, hero: HeroDef, p
   };
 
   // Exposed for debugging and automated browser checks.
-  (window as unknown as { __match: unknown }).__match = { world, player, hud };
+  (window as unknown as { __match: unknown }).__match = { world, player, hud, sfx };
 
   function showEnd(w: World, me: Unit, winner: Team) {
     const h = me.hero!;

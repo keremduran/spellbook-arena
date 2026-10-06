@@ -6,11 +6,22 @@
 export type SfxName =
   | 'swing' | 'shoot' | 'towerShot' | 'towerShotAlly' | 'towerHitMe' | 'hit' | 'crit'
   | 'bolt' | 'zap' | 'boom' | 'bigBoom' | 'whoosh' | 'blink' | 'heal' | 'shield' | 'buff' | 'stun' | 'ult'
-  | 'death' | 'kill' | 'allyDown' | 'levelUp' | 'boon' | 'structure' | 'click' | 'victory' | 'defeat' | 'announce' | 'rune';
+  | 'death' | 'kill' | 'allyDown' | 'levelUp' | 'boon' | 'structure' | 'structureWin' | 'structureLoss' | 'click' | 'victory' | 'defeat'
+  | 'announce' | 'announceBad' | 'rune' | 'runeBad';
 
 const PREFS_KEY = 'spellbook-audio';
+
+export type Mode = 'major' | 'minor';
+const SCALES: Record<Mode, number[]> = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10] };
+/** Frequency of a scale degree (0 = root; 7 = octave up) above `root`. */
+const noteFreq = (root: number, degree: number, mode: Mode) => {
+  const sc = SCALES[mode];
+  const oct = Math.floor(degree / 7);
+  const semis = sc[((degree % 7) + 7) % 7] + 12 * oct;
+  return root * Math.pow(2, semis / 12);
+};
 /** Music sits well under the sound effects. */
-const MUSIC_LEVEL = 0.35;
+const MUSIC_LEVEL = 0.55;
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -81,6 +92,20 @@ export class Sfx {
   }
 
   // ------------------------------------------------------------------ building blocks
+
+  /**
+   * Plays a short tune by scale degree. The same degrees in 'major' and 'minor' give the
+   * happy and sad versions of one motif (good news for you vs. good news for them).
+   */
+  private motif(degrees: number[], mode: Mode, o: { root: number; step: number; type?: OscillatorType; vol?: number; dur?: number; delay?: number }) {
+    degrees.forEach((d, i) => {
+      const f = noteFreq(o.root, d, mode);
+      const last = i === degrees.length - 1;
+      this.tone(f, last ? (o.dur ?? 0.2) * 2.2 : o.dur ?? 0.2, { type: o.type ?? 'triangle', vol: o.vol ?? 0.12, delay: (o.delay ?? 0) + i * o.step, attack: 0.01 });
+      // A soft octave-up shimmer keeps it sparkly without getting louder.
+      if (mode === 'major') this.tone(f * 2, last ? 0.35 : 0.12, { type: 'sine', vol: (o.vol ?? 0.12) * 0.3, delay: (o.delay ?? 0) + i * o.step });
+    });
+  }
 
   private tone(freq: number, dur: number, opts: { type?: OscillatorType; vol?: number; to?: number; delay?: number; attack?: number } = {}) {
     const c = this.ctx!;
@@ -212,16 +237,17 @@ export class Sfx {
         this.hiss(0.9, { filter: 'bandpass', freq: 300, to: 2500, vol: 0.2 });
         break;
       case 'death':
-        this.tone(300, 0.5, { type: 'triangle', to: 70, vol: 0.18 });
-        this.hiss(0.3, { freq: 800, to: 100, vol: 0.2 });
+        // You died: the kill motif, minor, low and slow.
+        this.motif([4, 2, 0], 'minor', { root: 196, step: 0.16, dur: 0.22, vol: 0.14 });
+        this.hiss(0.3, { freq: 800, to: 100, vol: 0.15 });
         break;
       case 'kill':
-        this.tone(659, 0.12, { type: 'square', vol: 0.1 });
-        this.tone(988, 0.25, { type: 'square', vol: 0.1, delay: 0.1 });
+        // An enemy hero fell: bright major motif.
+        this.motif([0, 2, 4], 'major', { root: 523.3, step: 0.07, dur: 0.12, type: 'square', vol: 0.07 });
         break;
       case 'allyDown':
-        this.tone(392, 0.2, { type: 'triangle', vol: 0.14 });
-        this.tone(262, 0.4, { type: 'triangle', vol: 0.14, delay: 0.16 });
+        // A teammate fell: the same motif in minor, lower and slower.
+        this.motif([0, 2, 4], 'minor', { root: 261.6, step: 0.11, dur: 0.16, vol: 0.12 });
         break;
       case 'levelUp':
         [392, 523, 659, 784].forEach((f, i) => this.tone(f, 0.25, { type: 'triangle', vol: 0.13, delay: i * 0.07 }));
@@ -232,89 +258,136 @@ export class Sfx {
         break;
       case 'structure':
         this.play('bigBoom', gain);
-        [196, 147, 98].forEach((f, i) => this.tone(f, 0.5, { type: 'sawtooth', vol: 0.08, delay: 0.2 + i * 0.18 }));
+        break;
+      case 'structureWin':
+        // An enemy tower falls: boom, then a major fanfare.
+        this.hiss(0.9, { freq: 1600, to: 70, vol: 0.4 });
+        this.tone(80, 0.7, { to: 30, vol: 0.4 });
+        this.motif([0, 2, 4, 7], 'major', { root: 392, step: 0.12, dur: 0.18, type: 'square', vol: 0.08, delay: 0.25 });
+        break;
+      case 'structureLoss':
+        // One of ours falls: the same fanfare in minor, under a heavier boom.
+        this.hiss(1.1, { freq: 1200, to: 50, vol: 0.5 });
+        this.tone(60, 1, { to: 25, vol: 0.5 });
+        this.motif([0, 2, 4, 7], 'minor', { root: 196, step: 0.18, dur: 0.24, vol: 0.13, delay: 0.25 });
         break;
       case 'announce':
-        this.tone(196, 0.5, { type: 'sawtooth', vol: 0.1 });
-        [392, 494, 587, 784].forEach((f, i) => this.tone(f, i === 3 ? 0.6 : 0.16, { type: 'square', vol: 0.09, delay: 0.05 + i * 0.09 }));
-        this.hiss(0.5, { filter: 'highpass', freq: 4000, vol: 0.08, delay: 0.3 });
+        // Streaks and multi-kills for your team.
+        this.motif([0, 4, 2, 4, 7], 'major', { root: 392, step: 0.08, dur: 0.12, type: 'square', vol: 0.07 });
+        this.hiss(0.5, { filter: 'highpass', freq: 4000, vol: 0.06, delay: 0.3 });
+        break;
+      case 'announceBad':
+        // The same call for the enemy team, in minor.
+        this.motif([0, 4, 2, 4, 7], 'minor', { root: 196, step: 0.1, dur: 0.14, type: 'sawtooth', vol: 0.05 });
         break;
       case 'rune':
-        [523, 784, 1047, 1319, 1568].forEach((f, i) => this.tone(f, 0.5, { type: 'sine', vol: 0.09, delay: i * 0.04, attack: 0.02 }));
-        this.tone(130, 0.7, { type: 'triangle', to: 260, vol: 0.15 });
+        this.motif([0, 4, 7, 9, 11], 'major', { root: 523.3, step: 0.04, dur: 0.3, type: 'sine', vol: 0.09 });
+        this.tone(130, 0.7, { type: 'triangle', to: 260, vol: 0.12 });
+        break;
+      case 'runeBad':
+        this.motif([0, 4, 7, 9, 11], 'minor', { root: 261.6, step: 0.05, dur: 0.3, type: 'sine', vol: 0.08 });
         break;
       case 'click':
         this.tone(1200, 0.04, { type: 'square', vol: 0.05 });
         break;
       case 'victory':
-        [523, 659, 784, 1047].forEach((f, i) => this.tone(f, i === 3 ? 0.9 : 0.25, { type: 'triangle', vol: 0.16, delay: i * 0.14 }));
+        this.motif([0, 2, 4, 7, 4, 7], 'major', { root: 523.3, step: 0.14, dur: 0.22, vol: 0.15 });
         break;
       case 'defeat':
-        [392, 349, 311, 262].forEach((f, i) => this.tone(f, i === 3 ? 0.9 : 0.3, { type: 'triangle', vol: 0.15, delay: i * 0.2 }));
+        this.motif([0, 2, 4, 7, 4, 0], 'minor', { root: 261.6, step: 0.2, dur: 0.28, vol: 0.14 });
         break;
     }
   }
 
   // ------------------------------------------------------------------ music
 
+  /** Major while your team is even or ahead, minor while it's behind. Switches at the next bar. */
+  private mood: Mode = 'major';
+  setMood(m: Mode) {
+    this.mood = m;
+  }
+
   /**
-   * Soft, minimal ambient: a slow warm pad (sine/triangle, no beat) with a few sparse bell
-   * notes on top. Meant to sit far behind the game, never to draw attention.
+   * Light, upbeat game loop at 112 bpm: soft kick and hats, a bass on the chord root and a
+   * plucky arpeggio, all under a lowpass and mixed well below the sound effects. The chord
+   * progression flips between a major and a minor version with the mood.
    */
   startMusic() {
     if (!this.ctx || this.music) return;
     const c = this.ctx;
-    // A-minor-ish pad voicings and a pentatonic set for the bells.
-    const chords = [[110, 164.8, 261.6], [98, 146.8, 246.9], [87.3, 130.8, 220], [98, 146.8, 233.1]];
-    const bells = [440, 523.3, 587.3, 659.3, 784, 880];
-    const filter = c.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 520;
-    filter.connect(this.musicBus);
-    let step = 0;
-    let stopped = false;
-    const bar = 9.6;
-    const playChord = () => {
-      if (stopped) return;
-      const t = c.currentTime;
-      const notes = chords[step % chords.length];
-      notes.forEach((f, i) => {
-        const o = c.createOscillator();
-        const g = c.createGain();
-        o.type = i === 0 ? 'sine' : 'triangle';
-        o.frequency.value = f;
-        o.detune.value = (i - 1) * 4;
-        g.gain.setValueAtTime(0.0001, t);
-        g.gain.exponentialRampToValueAtTime(i === 0 ? 0.03 : 0.012, t + 3);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + bar + 2);
-        o.connect(g).connect(filter);
-        o.start(t);
-        o.stop(t + bar + 2.2);
-      });
-      // Two or three quiet bell notes, placed at random in the bar.
-      const count = 1 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < count; i++) {
-        const tt = t + 1 + Math.random() * (bar - 2);
-        const o = c.createOscillator();
-        const g = c.createGain();
-        o.type = 'sine';
-        o.frequency.value = bells[Math.floor(Math.random() * bells.length)];
-        g.gain.setValueAtTime(0.0001, tt);
-        g.gain.exponentialRampToValueAtTime(0.018, tt + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0001, tt + 2.5);
-        o.connect(g).connect(this.musicBus);
-        o.start(tt);
-        o.stop(tt + 2.6);
-      }
-      step++;
+    const bus = c.createBiquadFilter();
+    bus.type = 'lowpass';
+    bus.frequency.value = 2600;
+    bus.connect(this.musicBus);
+    // Root (Hz) and chord quality per bar: I V vi IV in C, or i VI III VII in A minor.
+    const PROG: Record<Mode, [number, Mode][]> = {
+      major: [[130.8, 'major'], [196, 'major'], [220, 'minor'], [174.6, 'major']],
+      minor: [[220, 'minor'], [174.6, 'major'], [130.8, 'major'], [196, 'major']],
     };
-    playChord();
-    const timer = window.setInterval(playChord, bar * 1000);
+    const bpm = 112;
+    const sixteenth = 60 / bpm / 4;
+    let step = 0;
+    let next = c.currentTime + 0.1;
+    let stopped = false;
+    let bars: [number, Mode][] = PROG[this.mood];
+
+    const note = (f: number, t: number, dur: number, vol: number, type: OscillatorType, to?: number) => {
+      const o = c.createOscillator();
+      const g = c.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f, t);
+      if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(bus);
+      o.start(t);
+      o.stop(t + dur + 0.05);
+    };
+    const noise = (t: number, dur: number, vol: number, freq: number, type: BiquadFilterType) => {
+      if (!this.noise) return;
+      const src = c.createBufferSource();
+      src.buffer = this.noise;
+      const f = c.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      const g = c.createGain();
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(f).connect(g).connect(bus);
+      src.start(t);
+      src.stop(t + dur + 0.02);
+    };
+    const ARP = [0, 2, 4, 7, 4, 2, 4, 7];
+
+    const schedule = () => {
+      if (stopped) return;
+      while (next < c.currentTime + 0.25) {
+        const s16 = step % 16;
+        const barIdx = Math.floor(step / 16) % 4;
+        if (s16 === 0 && barIdx === 0) bars = PROG[this.mood];
+        const [root, quality] = bars[barIdx];
+        const t = next;
+        // Drums: kick on 1 and 3, soft clap on 2 and 4, hats on the off-eighths.
+        if (s16 === 0 || s16 === 8) note(120, t, 0.16, 0.16, 'sine', 42);
+        if (s16 === 4 || s16 === 12) noise(t, 0.09, 0.05, 1600, 'bandpass');
+        if (s16 % 4 === 2) noise(t, 0.035, 0.025, 7000, 'highpass');
+        // Bass: root on the beat, octave pickup at the end of the bar.
+        if (s16 === 0 || s16 === 6 || s16 === 8) note(root / 2, t, sixteenth * 3, 0.07, 'triangle');
+        if (s16 === 14) note(root, t, sixteenth * 1.5, 0.05, 'triangle');
+        // Arpeggio on eighths, two octaves up.
+        if (s16 % 2 === 0) note(noteFreq(root * 2, ARP[(s16 / 2) % 8], quality), t, sixteenth * 1.6, 0.022, 'square');
+        next += sixteenth;
+        step++;
+      }
+    };
+    schedule();
+    const timer = window.setInterval(schedule, 60);
     this.music = {
       stop: () => {
         stopped = true;
         window.clearInterval(timer);
-        filter.disconnect();
+        bus.disconnect();
       },
     };
   }
@@ -322,6 +395,15 @@ export class Sfx {
   stopMusic() {
     this.music?.stop();
     this.music = null;
+    this.mood = 'major';
+  }
+
+  /** Debug/test hook: a stream of everything this plays, for recording. */
+  tap(): MediaStream | null {
+    if (!this.ctx) return null;
+    const dest = this.ctx.createMediaStreamDestination();
+    this.master.connect(dest);
+    return dest.stream;
   }
 }
 

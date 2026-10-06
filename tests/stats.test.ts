@@ -33,6 +33,10 @@ it.runIf(process.env.STATS)('dump match stats', () => {
         towers: Math.round(h.dmgBuildings), total: Math.round(h.dmgTotal),
         picks: Object.fromEntries(SLOTS.map((s) => [s, h.abilities[s] ? [h.abilities[s]!.def.name, h.abilities[s]!.rarity] : null])),
         boons: h.boons.map((b) => [b.def.name, b.rarity, b.def.kind]),
+        melee: h.def.range < 200,
+        tankPicks: SLOTS.filter((s) => h.abilities[s]?.def.tags.includes('tank')).length,
+        tankBoons: h.boons.filter((b) => ['vitality', 'bulwark', 'stoneheart', 'grit'].includes(b.def.id)).length,
+        maxHp: Math.round(u.stats.maxHp),
       };
     });
     fs.appendFileSync(process.env.STATS!, JSON.stringify({ seed, minutes: w.time / 60, winner: w.winner, kills: w.kills, heroes }) + '\n');

@@ -24,6 +24,7 @@ export function createJoystick(parent: HTMLElement, player: Unit) {
     if (d < 12) h.moveDir = null;
     else {
       h.moveDir = { x: dx / Math.hypot(dx, dy), y: dy / Math.hypot(dx, dy) };
+      h.moveMag = Math.min(1, d / max);
       player.order = { kind: 'idle' };
     }
   };
@@ -31,9 +32,7 @@ export function createJoystick(parent: HTMLElement, player: Unit) {
     if (e.pointerId !== active) return;
     active = null;
     knob.style.transform = '';
-    const h = player.hero!;
-    if (h.moveDir) h.lastMoveDir = { dir: h.moveDir, at: performance.now() };
-    h.moveDir = null;
+    player.hero!.moveDir = null;
   };
 
   pad.addEventListener('pointerdown', (e) => {

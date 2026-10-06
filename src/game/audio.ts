@@ -52,13 +52,28 @@ export class Sfx {
 
   /** Must be called from a user gesture (browsers block audio before one). */
   unlock() {
+    // iPhone Safari treats web audio as "ambient" and mutes it with the silent switch; asking
+    // for a playback session makes it behave like a game/video instead (iOS 17+).
+    const nav = navigator as Navigator & { audioSession?: { type: string } };
+    try {
+      if (nav.audioSession && nav.audioSession.type !== 'playback') nav.audioSession.type = 'playback';
+    } catch {
+      // not supported
+    }
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
+      // iOS can leave the context 'interrupted' (calls, app switches, rotation): resume any non-running state.
+      if (this.ctx.state !== 'running') void this.ctx.resume();
       return;
     }
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
     this.ctx = new Ctx();
+    void this.ctx.resume();
+    // Older iOS only fully unlocks after a sound starts inside the gesture: play one silent sample.
+    const blank = this.ctx.createBufferSource();
+    blank.buffer = this.ctx.createBuffer(1, 1, 22050);
+    blank.connect(this.ctx.destination);
+    blank.start(0);
     this.master = this.ctx.createGain();
     this.master.gain.value = 0.7;
     const comp = this.ctx.createDynamicsCompressor();

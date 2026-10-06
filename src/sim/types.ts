@@ -126,8 +126,8 @@ export interface HeroState {
   multiAt: number;
   /** Joystick direction for touch controls; overrides orders while set. */
   moveDir: Vec | null;
-  /** Last joystick direction and when it was let go (ms, page clock), for escapes cast just after. */
-  lastMoveDir?: { dir: Vec; at: number };
+  /** How far the joystick is pushed, 0..1 (touch only); scales dash/blink distance. */
+  moveMag?: number;
   retreating: boolean;
   nextThink: number;
   laneOffset: number;
@@ -138,6 +138,7 @@ export type UnitKind = 'hero' | 'creep' | 'tower' | 'nexus';
 export interface Dash {
   vx: number;
   vy: number;
+  start: number;
   until: number;
   hit: Set<number>;
   damage: number;

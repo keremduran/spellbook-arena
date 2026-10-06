@@ -254,7 +254,7 @@ export class World {
   dash(u: Unit, dir: Vec, dist: number, speed: number, o: { damage?: number; radius?: number; stun?: number; onEnd?: () => void } = {}) {
     this.afterimage(u);
     u.dash = {
-      vx: dir.x * speed, vy: dir.y * speed, until: this.time + dist / speed, hit: new Set(),
+      vx: dir.x * speed, vy: dir.y * speed, start: this.time, until: this.time + dist / speed, hit: new Set(),
       damage: o.damage ?? 0, radius: o.radius ?? 0, stun: o.stun ?? 0, onEnd: o.onEnd,
     };
   }
@@ -606,7 +606,9 @@ export class World {
       if (!tele.self) ctx.aim = c;
       this.telegraphs.push({ ...base, shape: 'circle', x: c.x, y: c.y, x2: c.x, y2: c.y, size: tele.radius, follow: !!tele.self });
     } else {
-      const reach = tele.shape === 'target' ? Math.min(def.range, len(target!.x - u.x, target!.y - u.y)) : tele.length ?? def.range;
+      // Dashes only go as far as aimed, so their warning does too.
+      const aimed = def.tags.includes('mobility') ? Math.min(tele.shape === 'line' ? tele.length ?? def.range : def.range, d) : Infinity;
+      const reach = tele.shape === 'target' ? Math.min(def.range, len(target!.x - u.x, target!.y - u.y)) : Math.min(tele.shape === 'line' ? tele.length ?? def.range : def.range, aimed);
       const to = target ? { x: target.x, y: target.y } : { x: u.x + dir.x * reach, y: u.y + dir.y * reach };
       this.telegraphs.push({ ...base, shape: 'line', x: u.x, y: u.y, x2: to.x, y2: to.y, size: tele.shape === 'line' ? tele.width : 10 });
     }
@@ -1087,7 +1089,9 @@ export class World {
 
     if (u.dash) {
       const d = u.dash;
-      this.moveUnit(u, u.x + d.vx * dt, u.y + d.vy * dt);
+      // Don't overshoot on the last step: only move for the time that was left.
+      const span = Math.max(0, Math.min(t, d.until) - Math.max(t - dt, d.start));
+      this.moveUnit(u, u.x + d.vx * span, u.y + d.vy * span);
       if (d.damage > 0 || d.stun > 0) {
         for (const e of this.enemiesNear(u.team, u.x, u.y, d.radius + u.radius)) {
           if (d.hit.has(e.id)) continue;

@@ -443,12 +443,33 @@ describe('blink', () => {
     expect(wInst.readyAt - w.time).toBeCloseTo(11 * (1 - me.stats.cdr), 1);
   });
 
-  it('a quick tap with no joystick escapes away from the nearest enemy', async () => {
+  it('a quick tap with the joystick centred blinks in place (wasted)', async () => {
     const { autoAim } = await import('../src/game/aim');
     const { w, me } = setup();
-    me.facing = { x: 1, y: 0 }; // facing the enemy after attacking it
-    const aim = autoAim(w, me, me.hero!.abilities.Q!.def);
-    w.castAbility(me, 'Q', aim);
-    expect(me.x).toBeLessThan(1800);
+    me.facing = { x: 1, y: 0 };
+    w.castAbility(me, 'Q', autoAim(w, me, me.hero!.abilities.Q!.def));
+    expect(me.x).toBeCloseTo(1800, 0);
+    expect(me.hero!.abilities.Q!.readyAt).toBeGreaterThan(w.time);
+  });
+
+  it('follows the joystick direction, as far as it is pushed', async () => {
+    const { autoAim } = await import('../src/game/aim');
+    const { w, me } = setup();
+    me.facing = { x: 1, y: 0 };
+    me.hero!.moveDir = { x: -1, y: 0 };
+    me.hero!.moveMag = 0.5;
+    w.castAbility(me, 'Q', autoAim(w, me, me.hero!.abilities.Q!.def));
+    expect(me.x).toBeCloseTo(1800 - 215, 0);
+  });
+
+  it('dash strike only travels as far as aimed', () => {
+    const w = new World({ boonEveryLevels: 0, seed: 6 });
+    const dash = ABILITIES.find((a) => a.id === 'dash_strike')!;
+    const me = w.addHero({ def: HEROES[0], team: 'blue', name: 'me', isPlayer: true, picks: { Q: { def: dash, rarity: 'common' } } });
+    me.x = 1800; me.y = 600;
+    w.castAbility(me, 'Q', { x: 1900, y: 600 });
+    for (let i = 0; i < 30; i++) w.update(1 / 30);
+    expect(me.x).toBeGreaterThan(1880);
+    expect(me.x).toBeLessThan(1920);
   });
 });

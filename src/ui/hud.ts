@@ -1,4 +1,4 @@
-import { autoAim } from '../game/aim';
+import { aimsAtPoint, autoAim } from '../game/aim';
 import { sfx } from '../game/audio';
 import { heroImg } from '../game/heroIcons';
 import { MAP_H, MAP_W, MAX_LEVEL, xpToNext } from '../sim/constants';
@@ -126,6 +126,7 @@ export class Hud {
   private bindAimButton(btn: HTMLElement, slot: Slot) {
     let start: { x: number; y: number; id: number } | null = null;
     let dir: { x: number; y: number } | null = null;
+    let mag = 1;
     const DEAD = 22;
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
@@ -141,7 +142,10 @@ export class Hud {
       const dy = e.clientY - start.y;
       const d = Math.hypot(dx, dy);
       dir = d > DEAD ? { x: dx / d, y: dy / d } : null;
-      this.onAim?.(dir ? slot : null, dir);
+      // For ground-targeted spells and dashes, how far you drag sets how far they go.
+      const def = this.player.hero!.abilities[slot]?.def;
+      mag = def && aimsAtPoint(def) ? Math.min(1, (d - DEAD) / 90 + 0.15) : 1;
+      this.onAim?.(dir ? slot : null, dir ? { x: dir.x * mag, y: dir.y * mag } : null);
     });
     const finish = (e: PointerEvent, cancelled: boolean) => {
       if (!start || e.pointerId !== start.id) return;
@@ -152,7 +156,7 @@ export class Hud {
       const u = this.player;
       const inst = u.hero!.abilities[slot];
       if (!inst) return;
-      const range = Math.max(inst.def.range, 250);
+      const range = Math.max(inst.def.range, 250) * mag;
       const aim = dir ? { x: u.x + dir.x * range, y: u.y + dir.y * range } : autoAim(this.world, u, inst.def);
       this.world.castAbility(u, slot, aim);
     };

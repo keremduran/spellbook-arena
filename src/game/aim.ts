@@ -2,27 +2,26 @@ import type { AbilityDef } from '../sim/abilities';
 import type { Unit, Vec } from '../sim/types';
 import type { World } from '../sim/world';
 
+/** Abilities that move you to a chosen point (not lock-on ones like Shadow Strike). */
+export const movesToPoint = (def: AbilityDef) => def.tags.includes('mobility') && def.range > 0 && def.tele?.shape !== 'target';
+
+/** Abilities whose aim is a spot on the ground, so drag distance sets how far they land. */
+export const aimsAtPoint = (def: AbilityDef) => movesToPoint(def) || (def.tags.includes('area') && def.range > 300);
+
 /** Aim for touch / button casts: nearest enemy hero, else nearest enemy, else ahead. */
 export function autoAim(w: World, u: Unit, def: AbilityDef): Vec {
   const range = Math.max(def.range, 300);
   const dir = u.hero?.moveDir ?? u.facing;
   const ahead = { x: u.x + dir.x * range, y: u.y + dir.y * range };
-  if (def.ai === 'escape' || (def.tags.includes('mobility') && def.ai !== 'engage')) {
-    // Escapes go where the joystick points. With no joystick input, go away from the nearest
-    // enemy hero rather than along `facing` (which points at whatever you last attacked).
-    if (u.hero?.moveDir) return ahead;
-    // Joystick just let go (e.g. thumb lifted a moment before the tap): still use its direction.
-    const last = u.hero?.lastMoveDir;
-    if (last && performance.now() - last.at < 1500) return { x: u.x + last.dir.x * range, y: u.y + last.dir.y * range };
-    const threat = w.nearestEnemyTo(u.team, u, 900, u, true);
-    if (threat) {
-      const dx = u.x - threat.x;
-      const dy = u.y - threat.y;
-      const d = Math.hypot(dx, dy) || 1;
-      return { x: u.x + (dx / d) * range, y: u.y + (dy / d) * range };
-    }
-    return ahead;
+  // Dashes, blinks and leaps go where the joystick points, as far as it's pushed. With the
+  // joystick centred they go nowhere (League-style: flashing onto yourself wastes it).
+  if (movesToPoint(def)) {
+    const h = u.hero;
+    if (!h?.moveDir) return { x: u.x, y: u.y };
+    const reach = def.range * (h.moveMag ?? 1);
+    return { x: u.x + h.moveDir.x * reach, y: u.y + h.moveDir.y * reach };
   }
+  if (def.ai === 'escape') return ahead;
   const hero = w.nearestEnemyTo(u.team, u, Math.min(range * 1.1, 1200), u, true);
   if (hero) return { x: hero.x, y: hero.y };
   const any = w.nearestEnemyTo(u.team, u, Math.min(range, 900), u);

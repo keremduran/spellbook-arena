@@ -137,7 +137,8 @@ const BASICS: AbilityDef[] = [
     short: (p, m) => `dash · ${n(70 * p)} dmg`,
     desc: (p) => `Dash forward, dealing ${n(70 * p)} damage to enemies you pass through.`,
     cast: (w, u, c) => {
-      w.dash(u, c.dir, 340, 1300, { damage: 70 * c.p, radius: 45 });
+      // Dash as far as you aimed (up to 340); aiming on yourself wastes it.
+      w.dash(u, c.dir, Math.min(340, Math.hypot(c.aim.x - u.x, c.aim.y - u.y)), 1300, { damage: 70 * c.p, radius: 45 });
     },
   },
   {
@@ -452,7 +453,7 @@ const ULTS: AbilityDef[] = [
     short: (p, m) => `charge · ${n(180 * p)} · stun`,
     desc: (p) => `Charge 600 units, dealing ${n(180 * p)} damage and stunning everything you hit for 1s.`,
     cast: (w, u, c) => {
-      w.dash(u, c.dir, 600, 1500, { damage: 180 * c.p, radius: 65, stun: 1 });
+      w.dash(u, c.dir, Math.min(600, Math.hypot(c.aim.x - u.x, c.aim.y - u.y)), 1500, { damage: 180 * c.p, radius: 65, stun: 1 });
     },
   },
   {

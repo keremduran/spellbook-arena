@@ -20,7 +20,11 @@ const params = new URLSearchParams(location.search);
 if (isTouchDevice()) document.body.classList.add('touch');
 
 // Audio can only start after a user gesture; UI buttons get a soft click.
-document.addEventListener('pointerdown', () => sfx.unlock(), { capture: true });
+for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) document.addEventListener(ev, () => sfx.unlock(), { capture: true });
+// Coming back to the app (or rotating) can suspend audio on phones; wake it on the next touch.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) sfx.unlock();
+});
 // Exposed for automated audio checks.
 (window as unknown as { __sfx: unknown }).__sfx = sfx;
 ui.addEventListener('click', (e) => {

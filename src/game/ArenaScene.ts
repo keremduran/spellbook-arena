@@ -74,7 +74,15 @@ export class ArenaScene extends Phaser.Scene {
       this.labels.set(h.id, { icon, name });
     }
     this.layoutCamera();
-    this.scale.on('resize', () => this.layoutCamera());
+    // Rotating a phone fires resize before the new size settles (notably on iOS), so lay out
+    // again a moment later and snap the camera instead of easing from a stale position.
+    this.scale.on('resize', () => {
+      this.layoutCamera();
+      window.setTimeout(() => {
+        this.scale.refresh();
+        this.layoutCamera();
+      }, 350);
+    });
 
     this.input.mouse?.disableContextMenu();
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
@@ -84,7 +92,7 @@ export class ArenaScene extends Phaser.Scene {
       }
       if (this.hooks.isPaused()) return;
       // On touch screens you move only with the joystick; stray taps on the map do nothing.
-      if (p.wasTouch) return;
+      if (p.wasTouch || document.body.classList.contains('touch')) return;
       this.rightDown = true;
       this.command(p);
     });
@@ -223,10 +231,16 @@ export class ArenaScene extends Phaser.Scene {
     const { width, height } = this.scale.gameSize;
     const touch = window.matchMedia('(pointer: coarse)').matches;
     const span = this.player ? (touch ? 1250 : 1600) : 2000;
-    this.baseZoom = Math.min(width / span, height / (span * 0.5625));
-    cam.setZoom(this.baseZoom * this.zoomMul);
+    // Never zoom out past the map, or the camera clamps somewhere off to the side.
+    const fit = Math.max(width / MAP_W, height / MAP_H);
+    this.baseZoom = Math.max(fit, Math.min(width / span, height / (span * 0.5625)));
+    cam.setZoom(Math.max(fit, this.baseZoom * this.zoomMul));
     cam.setBounds(0, 0, MAP_W, MAP_H);
+    this.snapCamera = true;
   }
+
+  /** Jump straight to the camera target on the next frame (after a resize). */
+  private snapCamera = true;
 
   update(_time: number, deltaMs: number) {
     const dt = Math.min(deltaMs / 1000, 0.1);
@@ -263,8 +277,10 @@ export class ArenaScene extends Phaser.Scene {
       this.camPos.y = Math.max(0, Math.min(MAP_H, this.camPos.y));
       focus = this.camPos;
     }
-    const cx = cam.midPoint.x + (focus.x - cam.midPoint.x) * Math.min(1, dt * 8);
-    const cy = cam.midPoint.y + (focus.y - cam.midPoint.y) * Math.min(1, dt * 8);
+    const ease = this.snapCamera ? 1 : Math.min(1, dt * 8);
+    this.snapCamera = false;
+    const cx = cam.midPoint.x + (focus.x - cam.midPoint.x) * ease;
+    const cy = cam.midPoint.y + (focus.y - cam.midPoint.y) * ease;
     cam.centerOn(cx, cy);
     this.musicTimer -= dt;
     if (this.musicTimer <= 0) {

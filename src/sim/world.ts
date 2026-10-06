@@ -582,6 +582,8 @@ export class World {
     }
     const dir = { x: dx / d, y: dy / d };
     const ctx = { aim: { ...aim }, dir, p: this.power(u, inst.rarity), m: RARITIES[inst.rarity].mult };
+    // Blink sets a one-off cooldown override inside its cast; never let it leak into this cast.
+    this.cooldownOverride = null;
     if (def.id !== 'shadow_veil') u.stealthUntil = 0;
     u.facing = dir;
     const tele = def.tele;
@@ -639,6 +641,7 @@ export class World {
     this.events.push({ type: 'cast', unitId: u.id, abilityId: def.id, kind: def.kind, tags: def.tags, color: def.color, x: u.x, y: u.y });
     if (def.ai !== 'escape' && def.ai !== 'heal') h.lastCombatAt = this.time;
     if (!cooldownStarted || this.cooldownOverride !== null) this.startCooldown(u, inst);
+    this.cooldownOverride = null;
     const ef = h.effects;
     if (ef.bulwarkCast && this.time >= (h.nextSpellshield ?? 0)) {
       h.nextSpellshield = this.time + 1.5;

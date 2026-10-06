@@ -408,3 +408,47 @@ describe('wind-ups', () => {
     expect(me.hero!.abilities.Q!.readyAt).toBeLessThan(full);
   });
 });
+
+describe('blink', () => {
+  const setup = (rarity: Rarity = 'common') => {
+    const w = new World({ boonEveryLevels: 0, seed: 5 });
+    const blink = ABILITIES.find((a) => a.id === 'blink')!;
+    const hook = ABILITIES.find((a) => a.id === 'hook')!;
+    const me = w.addHero({ def: HEROES[0], team: 'blue', name: 'me', isPlayer: true, picks: { Q: { def: blink, rarity }, W: { def: hook, rarity: 'common' } } });
+    const foe = w.addHero({ def: HEROES[1], team: 'red', name: 'foe', isPlayer: true, picks: {} });
+    me.x = 1800; me.y = 600; foe.x = 2100; foe.y = 600;
+    return { w, me, foe };
+  };
+
+  it('teleports up to 430 towards the aim, instantly', () => {
+    const { w, me } = setup();
+    expect(w.castAbility(me, 'Q', { x: 1000, y: 600 })).toBe(true);
+    expect(me.x).toBeCloseTo(1370, 0);
+    expect(me.y).toBe(600);
+  });
+
+  it('goes exactly to a closer aim point', () => {
+    const { w, me } = setup();
+    w.castAbility(me, 'Q', { x: 1600, y: 600 });
+    expect(me.x).toBeCloseTo(1600, 0);
+  });
+
+  it('cooldown shortens with rarity and does not leak into the next cast', () => {
+    const { w, me, foe } = setup('legendary');
+    w.castAbility(me, 'Q', { x: 1500, y: 600 });
+    const q = me.hero!.abilities.Q!;
+    expect(q.readyAt - w.time).toBeCloseTo(10 / Math.sqrt(2.5), 1);
+    w.castAbility(me, 'W', { x: foe.x, y: foe.y });
+    const wInst = me.hero!.abilities.W!;
+    expect(wInst.readyAt - w.time).toBeCloseTo(11 * (1 - me.stats.cdr), 1);
+  });
+
+  it('a quick tap with no joystick escapes away from the nearest enemy', async () => {
+    const { autoAim } = await import('../src/game/aim');
+    const { w, me } = setup();
+    me.facing = { x: 1, y: 0 }; // facing the enemy after attacking it
+    const aim = autoAim(w, me, me.hero!.abilities.Q!.def);
+    w.castAbility(me, 'Q', aim);
+    expect(me.x).toBeLessThan(1800);
+  });
+});

@@ -82,6 +82,8 @@ export class ArenaScene extends Phaser.Scene {
         return;
       }
       if (this.hooks.isPaused()) return;
+      // On touch screens you move only with the joystick; stray taps on the map do nothing.
+      if (p.wasTouch) return;
       this.rightDown = true;
       this.command(p);
     });

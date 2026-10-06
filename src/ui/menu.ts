@@ -1,6 +1,6 @@
 import { el } from './dom';
 
-export const VERSION = 'v4.2 · new music & team sounds';
+export const VERSION = 'v4.3 · new soundtrack';
 
 export interface Settings {
   mode: 'play' | 'manage';

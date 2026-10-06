@@ -9,6 +9,8 @@ export type SfxName =
   | 'death' | 'kill' | 'allyDown' | 'levelUp' | 'boon' | 'structure' | 'structureWin' | 'structureLoss' | 'click' | 'victory' | 'defeat'
   | 'announce' | 'announceBad' | 'rune' | 'runeBad';
 
+import { startMusic } from './music';
+
 const PREFS_KEY = 'spellbook-audio';
 
 export type Mode = 'major' | 'minor';
@@ -21,7 +23,7 @@ const noteFreq = (root: number, degree: number, mode: Mode) => {
   return root * Math.pow(2, semis / 12);
 };
 /** Music sits well under the sound effects. */
-const MUSIC_LEVEL = 0.55;
+const MUSIC_LEVEL = 0.45;
 
 export class Sfx {
   private ctx: AudioContext | null = null;
@@ -307,89 +309,10 @@ export class Sfx {
     this.mood = m;
   }
 
-  /**
-   * Light, upbeat game loop at 112 bpm: soft kick and hats, a bass on the chord root and a
-   * plucky arpeggio, all under a lowpass and mixed well below the sound effects. The chord
-   * progression flips between a major and a minor version with the mood.
-   */
+  /** Background music (see music.ts); follows the mood at the next 8-bar section. */
   startMusic() {
     if (!this.ctx || this.music) return;
-    const c = this.ctx;
-    const bus = c.createBiquadFilter();
-    bus.type = 'lowpass';
-    bus.frequency.value = 2600;
-    bus.connect(this.musicBus);
-    // Root (Hz) and chord quality per bar: I V vi IV in C, or i VI III VII in A minor.
-    const PROG: Record<Mode, [number, Mode][]> = {
-      major: [[130.8, 'major'], [196, 'major'], [220, 'minor'], [174.6, 'major']],
-      minor: [[220, 'minor'], [174.6, 'major'], [130.8, 'major'], [196, 'major']],
-    };
-    const bpm = 112;
-    const sixteenth = 60 / bpm / 4;
-    let step = 0;
-    let next = c.currentTime + 0.1;
-    let stopped = false;
-    let bars: [number, Mode][] = PROG[this.mood];
-
-    const note = (f: number, t: number, dur: number, vol: number, type: OscillatorType, to?: number) => {
-      const o = c.createOscillator();
-      const g = c.createGain();
-      o.type = type;
-      o.frequency.setValueAtTime(f, t);
-      if (to) o.frequency.exponentialRampToValueAtTime(to, t + dur);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g).connect(bus);
-      o.start(t);
-      o.stop(t + dur + 0.05);
-    };
-    const noise = (t: number, dur: number, vol: number, freq: number, type: BiquadFilterType) => {
-      if (!this.noise) return;
-      const src = c.createBufferSource();
-      src.buffer = this.noise;
-      const f = c.createBiquadFilter();
-      f.type = type;
-      f.frequency.value = freq;
-      const g = c.createGain();
-      g.gain.setValueAtTime(vol, t);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      src.connect(f).connect(g).connect(bus);
-      src.start(t);
-      src.stop(t + dur + 0.02);
-    };
-    const ARP = [0, 2, 4, 7, 4, 2, 4, 7];
-
-    const schedule = () => {
-      if (stopped) return;
-      while (next < c.currentTime + 0.25) {
-        const s16 = step % 16;
-        const barIdx = Math.floor(step / 16) % 4;
-        if (s16 === 0 && barIdx === 0) bars = PROG[this.mood];
-        const [root, quality] = bars[barIdx];
-        const t = next;
-        // Drums: kick on 1 and 3, soft clap on 2 and 4, hats on the off-eighths.
-        if (s16 === 0 || s16 === 8) note(120, t, 0.16, 0.16, 'sine', 42);
-        if (s16 === 4 || s16 === 12) noise(t, 0.09, 0.05, 1600, 'bandpass');
-        if (s16 % 4 === 2) noise(t, 0.035, 0.025, 7000, 'highpass');
-        // Bass: root on the beat, octave pickup at the end of the bar.
-        if (s16 === 0 || s16 === 6 || s16 === 8) note(root / 2, t, sixteenth * 3, 0.07, 'triangle');
-        if (s16 === 14) note(root, t, sixteenth * 1.5, 0.05, 'triangle');
-        // Arpeggio on eighths, two octaves up.
-        if (s16 % 2 === 0) note(noteFreq(root * 2, ARP[(s16 / 2) % 8], quality), t, sixteenth * 1.6, 0.022, 'square');
-        next += sixteenth;
-        step++;
-      }
-    };
-    schedule();
-    const timer = window.setInterval(schedule, 60);
-    this.music = {
-      stop: () => {
-        stopped = true;
-        window.clearInterval(timer);
-        bus.disconnect();
-      },
-    };
+    this.music = startMusic(this.ctx, this.musicBus, () => this.mood);
   }
 
   stopMusic() {
